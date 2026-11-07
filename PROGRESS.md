@@ -151,10 +151,12 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
 
 **Still open:**
 
-1. **The carnivore diet band does not survive one generation.** In a 6000-tick default-config
-   trace (`tests/scratch-population.ts`, seed `evolab`): founder carnivores gone by tick 250,
-   predation deaths exactly **0** from tick 500 onward, whole-population genome diet drifting
-   *down* (mean 0.08 → 0.05). The answer is in §6A/§6B.
+1. **The carnivore diet band does not survive one generation.** Re-measured in this loop on the
+   default world (168×112), three seeds, 3000 ticks: the band is **zero at the first census** in
+   every run; all band deaths are starvation (no thermal, no predation). Successful kill rate is
+   capped at 0.28–0.37 per carnivore per tick; intake 0.15–0.44/tick against a 0.21–0.54 need.
+   Same-strategy target selection works (52% of attempts land); random selection lands 0 in 25.
+   The answer is in §6A/§6B; the food-web route remains open.
 2. **The population ceiling, not ecology, is what regulates numbers.** Same trace: the herd fills
    `maxCreatures` (3200) by ~tick 750 and stays pinned exactly there for the remaining 5000+
    ticks while vegetation stays healthy. Raising the ceiling to 12000 does not find a stable
@@ -215,9 +217,15 @@ From the cohort probe (`tests/scratch.test.ts`) and the per-episode diagnostic
   | Carnivore founder speed raised to 1.8 | Intake per carnivore ×10 (~0.011 → ~0.107 per tick) — still ~4× below their ~0.44/tick bill; extinction by ~tick 100 |
   | Flight-initiation distance 3 tiles (`FLEE_INITIATION_DISTANCE`) | Little effect; kill cycles stayed 40–43 ticks |
 
-- **Not yet implemented:** clustered founder spawning — herbivore founders around fertile core
-  sites, omnivore and carnivore founders in rings around those cores, so carnivores hatch where
-  herbivores are visible.
+- **Clustered founder spawning — implemented this loop, and it fixed its own precondition without
+  fixing the cohort.** Founders are spawned around fertile cores with a ring per diet band
+  (`engine.ts` ~line 257: `founderRing` herbivore 10 / omnivore 8 / carnivore 15, via
+  `world.findSpawnNear`). Measured with the new probe `tests/scratch-founder-prey-visibility.ts` on
+  the default world (168×112), three seeds, at t=0: every founder carnivore now has legal prey in
+  range — 0–53 legal prey visible, nearest legal quarry 0–6 tiles (0–2 on seed `evolab`). §6A's original cause
+  (founders never reach legal prey) is therefore **closed as a cause**; the band still goes to zero
+  at the first census, so the binding constraint is not contact but the energy flow from a kill
+  (see §6D). The change is kept: it fixed the precondition it was written for.
 
 **B. Why no new carnivore ever appears.** The 6000-tick traces (both ceilings) show the same
 thing: predation deaths are exactly 0 from tick 500 onward; at most 1–6 of 12000 animals ever sit
@@ -257,6 +265,34 @@ own at default primary productivity — it is what the ceiling imposes. The guar
 to match the design: `normalizeConfig` clamps `maxCreatures` to 4000. The right fix is to make
 ecology the regulator, top-down: keep predators alive (A/B) first, re-measure, and only then, if
 K still sits at the ceiling, lower primary productivity rather than raise the ceiling.
+
+**D. Candidate records for this loop (measured).** Each candidate below was measured with the probes
+in §7 on the default world (168×112), seeds `evolab`, `evolab-2`, `evolab-3`, 3000 ticks, census
+every 250 ticks. The engine was not changed for a candidate until the candidate produced a result.
+
+| Candidate | Measured result | Verdict |
+|---|---|---|
+| Clustered founder spawning (rings 10/8/15 around a fertile core, `engine.ts` ~258) | Founder bands now see legal prey at t=0 (0–53 legal prey visible per founder, nearest legal quarry 0–6 tiles, most 0–2). Carnivore band still **0 at the first census** on all three seeds | **Kept.** It fixed the contact failure it was written for; it does not by itself keep the band alive |
+| Founder metabolic load 1.15 → 0.8 (`traits.ts`, `metabolism.founders.carnivore`) | Identical outcome: founder band 0 at the first census, carnivore band 0 at every census, on all three seeds. Whole-world death tallies *worsened* (seed `evolab`: starvation 2895 → 4073, thermal 1517 → 2108). Final population 3196/3190 and 3200/3196 — the ceiling, not the band, sets the number | **Rejected** (not committed) |
+
+The two results together say the same thing: with legal prey visible a few tiles away and a smaller
+energy bill, the founder carnivores still do not eat. The remaining constraint is on the **supply of
+meat energy a strict carnivore can actually convert**, not on the band's own budget. That is the next
+candidate (a food-web change: who is available as quarry and what a kill yields), not a founder-trait
+change.
+
+**Seed sensitivity (measured, and it matters for the test suite).** Whole-world collapse is
+seed-dependent, in both the default world and the test configuration:
+
+- Default world, 3000 ticks: `evolab-2` ends with **population 0** (6 old-age, 56 starvation, 77
+  predation, 5 thermal deaths) in both the baseline and the metabolic variant, while `evolab` and
+  `evolab-3` end pinned at the 3200 ceiling.
+- 48×48 test configuration on seed `evolab` (`tests/scratch-testconfig-collapse.ts`): alive 11 at
+  tick 250 → 4 → 3 → 1 → **0 by tick 1250**. The unit tests are unaffected only because they run on
+  `probe-*` seeds and 1500 ticks.
+
+Any candidate must therefore be measured on at least three seeds, and "population 0 at tick 1250"
+counts as a collapse, not a stable community.
 
 ---
 
@@ -299,6 +335,18 @@ the prey-reach breakdown; `auditEnergy()` for the world; deaths by cause since t
 window tables; its readings are what §6A is built from. It remains a print-only diagnostic — the
 assertions belong to step 5 below.
 
+**The candidate probes added in this loop** (all plain node scripts, run with `npx tsx`, none of them
+part of the vitest suite):
+
+| Probe | What it measures |
+|---|---|
+| `tests/scratch-founder-metabolism.ts` | founder carnivore count and the whole carnivore band every 250 ticks, 3000 ticks, seeds `evolab`, `evolab-2`, `evolab-3`, with per-run death tallies (the candidate table in 6) |
+| `tests/scratch-founder-prey-visibility.ts` | legal prey (engine gates) visible to each founder carnivore at t=0, and the distance to the nearest legal quarry |
+| `tests/scratch-testconfig-collapse.ts` | whether the 48x48 test configuration collapses on the `evolab` seed |
+
+Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
+§6D. They are kept in the tree so every recorded result can be re-run.
+
 ---
 
 ## 8. Order of work
@@ -306,19 +354,27 @@ assertions belong to step 5 below.
 1. ✅ Probe rebuilt and run (§7).
 2. ✅ Causes identified and written into §6 (A: founder cohort never reaches legal prey; B:
    carnivory cannot recolonise; C: the ceiling, not ecology, sets current numbers).
-3. Three changes made and measured (quarry commitment, founder speed 1.8, flight-initiation
-   distance); none produced cohort persistence. Next candidates, one change per probe iteration,
-   in priority order:
-   a. **Clustered founder spawning** (`findSpawnNear`: herbivores around fertile cores, omnivore
-      and carnivore founders in rings around them) so founders hatch where legal prey is visible.
-   b. **Founder adaptation to local conditions** (thermal optimum matched to spawn climate):
+3. Candidates measured one at a time; every result is in §6D. Nothing so far has produced cohort
+   persistence:
+   a. quarry commitment, founder speed 1.8, flight-initiation distance (earlier pass) — no effect;
+   b. ✅ **Clustered founder spawning** (`findSpawnNear` rings, herbivores 10 / omnivores 8 /
+      carnivores 15 around a fertile core) — kept: it fixed the contact failure it was written for
+      (§6A), the band still dies;
+   c. ❌ **lower founder metabolic load 1.15 → 0.8** — rejected, measured null (§6D).
+   Next candidate, in order:
+   d. **The meat-energy supply of a strict carnivore**: the legal-prey mass/energy gates and what a
+      kill yields (`preyIsLegal`, `pickQuarry`, the absorbed-energy formula). Two candidates found
+      dead ends in the carnivore's own budget; this is the other side of the exchange.
+   e. **Founder adaptation to local conditions** (thermal optimum matched to spawn climate):
       thermal stress is a top-three cause of death at every population scale (§6C).
-   c. If a multi-band community survives, **re-measure carrying capacity**; only if it is still
+   f. If a multi-band community survives, **re-measure carrying capacity**; only if it is still
       pinned at the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem
       settles below 3200 on its own instead of being clipped.
-4. A candidate is accepted only if `scratch.test.ts` shows cohort persistence beyond ~1000 ticks
-   **and** `scratch-population.ts` shows continuing predation deaths and a population not pinned
-   at the ceiling.
+4. Acceptance test for the next candidate, measured on three seeds: the founder band is still alive
+   at tick 3000 on at least two seeds (`tests/scratch-founder-metabolism.ts`), `scratch.test.ts`
+   shows cohort persistence beyond ~1000 ticks, and `tests/scratch-testconfig-collapse.ts` shows the
+   48×48 configuration no longer collapsing. A candidate that only works while the population is
+   pinned at the 3200 ceiling does not count.
 5. ✅ Done (milestone 5). The diagnosis became assertion tests: `tests/conservation.test.ts`
    (1000-tick energy audit), `tests/determinism.test.ts`, `tests/lineage.test.ts` (inheritance /
    mutation / engine genealogy), `tests/population.test.ts` (census bookkeeping). The probes remain
