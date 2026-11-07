@@ -18,7 +18,7 @@ an open question in §6 rather than stated as fact._
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
 | 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log. Verified against the running dev server: tick advances, canvas paints, panels populate |
 | 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean |
-| 6 Performance / E2E | **not started** | the `test:perf` / `test:e2e` scripts point at a config and a runner that do not exist |
+| 6 Performance / E2E | **done, measured** | `vitest.perf.config.ts` + `tests/perf/engine.perf.ts` (a separate runner; `*.perf.ts` is never matched by `npm run test`): default 168×112 world builds in ~18 ms and runs at 13–16 ms/tick with a warm population of ~3200 — the UI budget at 10 ticks/s is <100 ms/tick shared with rendering; 48×48 test world at its 500-creature ceiling ~1.4 ms/tick; save/restore ~4 ms. Limits are floors (~3–30× headroom), so a red perf test means an algorithmic blow-up. E2E: `playwright.config.ts` + `e2e/app.e2e.ts` drive the real app against the real engine on a dedicated dev-server port: readout reflects the world, Step advances exactly one tick per click, Run/Pause control the loop, seed input creates a world with that seed and resets the tick. `npm run test:perf` → 3/3 pass; `npm run test:e2e` → 4/4 pass; unit suite and `npm run build` remain green |
 
 ---
 
@@ -161,9 +161,12 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
    carrying capacity either — it produces overgrazing boom-and-bust (§6C). A hard design limit was
    added so no run can outrun its intended size: `normalizeConfig` now clamps `maxCreatures` to
    **4000** (was 20000); the default stays 3200.
-3. **`npm run test:perf` and `npm run test:all` cannot run**: `vitest.perf.config.ts` does not exist.
-4. **`npm run test:e2e` cannot run**: `playwright` is neither a dependency nor installed, and there is
-   no Playwright config or test directory.
+3. ~~`npm run test:perf` and `npm run test:all` cannot run: `vitest.perf.config.ts` does not
+   exist.~~ Closed by milestone 6: the perf runner and `tests/perf/engine.perf.ts` exist; 3 benchmarks
+   pass (baselines recorded in §10).
+4. ~~`npm run test:e2e` cannot run: `playwright` is not installed.~~ Closed by milestone 6:
+   `@playwright/test` is installed, `playwright.config.ts` + `e2e/app.e2e.ts` exist; 4 browser tests
+   pass against the real dev server. `test-results/` and `playwright-report/` are gitignored.
 5. ~~No test asserts core simulation behaviour.~~ Closed by the milestone-5 pass (see above). What is
    *not* yet asserted is the ecology outcome the tests were built to track: no test can show a
    persisting predator cohort or an un-capped population, because neither exists yet (items 1–2).
@@ -339,9 +342,35 @@ npx vite-node tests/scratch-pursuit.ts # per-chase-episode diagnostic (prints)
 npx vite-node tests/scratch-population.ts [ceiling]
                                        # population trajectory vs the ceiling; optional
                                        # ceiling override raises maxCreatures for the run
-npm run test:perf                    # not usable: vitest.perf.config.ts does not exist
-npm run test:e2e                     # not usable: playwright is not installed
+npm run test:perf                  # perf benchmarks — 3 pass; measured baselines in §10
+npm run test:e2e                   # Playwright E2E — 4 pass (chromium against the dev server)
+npm run test:all                   # unit + perf + e2e in sequence — all green
 ```
 
 Note: `npx vitest run` at the repository root matches no test files, because the package lives in the
 nested `EvoLab/` folder; run the suite from `EvoLab/`.
+
+---
+
+## 10. Performance baselines (milestone 6)
+
+Measured on this development machine. `npm run test:perf` prints these on every run; the assertion
+limits sit ~10× below them on purpose, so a perf failure means an algorithmic regression, not noise.
+
+| Load case | Measured | Test limit |
+| --- | --- | --- |
+| 48×48 test world, warm population 499 (its ceiling) | **1.4–1.8 ms/tick** | 50 ms/tick |
+| default 168×112 world, world generation | **18–20 ms** | 1000 ms |
+| same default world, warm population ~3200 (the cap) | **13–16 ms/tick** | 100 ms/tick |
+| in-memory save/restore of a warm 48×48 world | **3.5–3.9 ms** | 1000 ms |
+
+The 100 ms/tick figure is not invented headroom: 10 ticks/s is the top UI speed preset, and the
+engine shares every animation frame with canvas rendering and panel updates. At 16 ms/tick the
+engine still leaves the majority of each frame budget to rendering.
+
+Growth cost curve (`npx vite-node tests/scratch-perf-probe.ts`, ms/tick per 200-tick batch on the
+default world): **1.3 ms/tick at population 58 (tick 200) → 13–16 ms/tick at the 3200 ceiling
+(tick 2400)** — cost scales roughly linearly with population; no superlinear blow-up observed at
+any population size tested.
+
+E2E run cost: `npm run test:e2e` — 4 chromium tests, ~5 s total.
