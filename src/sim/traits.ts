@@ -48,7 +48,10 @@ const TRAITS_LIST: TraitDef[] = [
     label: 'Sprint speed',
     min: 0.15,
     max: 2.4,
-    founders: { herbivore: 1.15, carnivore: 1.35, omnivore: 1.1 },
+    // Carnivore founders must be meaningfully faster than their prey: with a
+    // 0.2 tiles/tick closing speed no hunt ever lands inside a carnivore's
+    // energy grace period (see tests/scratch.test.ts for the measurement).
+    founders: { herbivore: 1.15, carnivore: 1.8, omnivore: 1.1 },
     spread: 0.18,
     volatility: 1.0,
     weight: 1.4,

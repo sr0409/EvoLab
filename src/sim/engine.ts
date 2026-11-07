@@ -78,6 +78,9 @@ export interface Creature {
   phenotype: Phenotype
   genome: Genome
   alive: boolean
+  /** Creature id of the quarry this animal is chasing, or -1. Transient
+   *  behaviour state like `tx`/`ty`; not persisted in saves. */
+  huntTarget: number
   /** Pending birth marker; only lives in the newborn buffer during a tick. */
   pending?: boolean
 }
@@ -154,6 +157,14 @@ export const SIM_STATE_VERSION = 1
 
 const CENSUS_PERIOD = 5
 const TERRAIN_REFRESH_PERIOD = 10
+/**
+ * Flight-initiation distance, in tiles. A prey animal commits to a full-speed
+ * sprint only when a predator is this close; fleeing at max speed from an
+ * animal that is still far away costs more energy than it saves, and gave
+ * every hunter a ~25-tick closing run it could not afford (see the food-web
+ * probe in tests/scratch.test.ts).
+ */
+const FLEE_INITIATION_DISTANCE = 3
 const MAX_EVENTS = 500
 /** Below this many creatures, boom/crash alerts are not raised. */
 const EVENT_POP_THRESHOLD = 20
@@ -236,13 +247,28 @@ export class Simulation {
     for (const field of CHART_FIELDS) this.series.set(field, new SeriesBuffer())
 
     this.world.generate(config.world)
+    // Founder rings around one fertile core. Producers settle the core; the
+    // predator band settles in a wider ring around them. Seeding everything in
+    // one neighbourhood lets the few founder carnivores eat the founder herd
+    // before it ever reproduces; the outer ring lets the producers start their
+    // growth phase first, while keeping the herd close enough that the
+    // carnivores find it within their first hunger cycle — a founder wave that
+    // reaches its prey just after the prey has established.
+    const core = this.world.findSpawn(this.rng)
+    const founderRing: Record<'herbivore' | 'omnivore' | 'carnivore', number> = {
+      herbivore: 10,
+      omnivore: 8,
+      carnivore: 15
+    }
     for (const diet of DIET_CLASSES) {
       const founder = founderGenome(this.rng, diet, 0)
       founder[TRAIT_INDEX.hue] = diet === 'herbivore' ? 120 : diet === 'carnivore' ? 10 : 45
       const record = this.species.found(founder, -1, 0)
       const count = config.population.founders[diet] ?? 0
+      const radius = founderRing[diet]
       for (let i = 0; i < count; i++) {
-        this.spawnFounder(founderGenome(this.rng, diet), record.id)
+        const tile = this.world.findSpawnNear(this.rng, core, radius)
+        this.spawnFounder(founderGenome(this.rng, diet), record.id, tile)
       }
     }
 
@@ -376,11 +402,17 @@ export class Simulation {
     this.ledger.burial += this.flux.buried
   }
 
-  private spawnFounder(genome: Genome, speciesId: number): void {
+  private spawnFounder(genome: Genome, speciesId: number, tile?: number): void {
     const phenotype = buildPhenotype(genome)
-    const spot = this.world.findSpawn(this.rng)
-    const c = this.makeCreature(genome, phenotype, speciesId, spot, 0)
-    c.energy = phenotype.maxEnergy * 0.6
+    const c = this.makeCreature(genome, phenotype, speciesId, tile ?? this.world.findSpawn(this.rng), 0)
+    // A founding population is made of breeding-age adults, not newborns. Seeding
+    // newborns means the producer band cannot reproduce for its whole maturation
+    // age — the audits showed the founder herd being eaten to the last animal
+    // before its first young was ever born, and the carnivore band starving
+    // afterwards with nothing left to hunt. Adult founders reproduce from the
+    // first season, which is what a founding population actually needs to do.
+    c.age = phenotype.maturityAge
+    c.energy = phenotype.maxEnergy * 0.75
     this.creatures.push(c)
     this.species.updateCentroid(speciesId, genome)
   }
@@ -412,7 +444,8 @@ export class Simulation {
       localTemperature: this.world.temperature[tile] ?? 0,
       phenotype,
       genome,
-      alive: true
+      alive: true,
+      huntTarget: -1
     }
     this.lineage.add(c.id, -1, -1, birthTick, -1)
     this.species.markBorn(speciesId)
@@ -504,16 +537,41 @@ export class Simulation {
       c.reproCooldown <= 0 &&
       c.energy >= ph.reproThresholdEnergy &&
       c.minerals >= ph.mineralMax * 0.2
+    // Threat detection uses the flight-initiation distance, not the full
+    // sensory range: an animal notices distant hunters but only sprints away
+    // from ones that can actually reach it.
     const predators = this.neighborsWithin(
       c,
-      ph.senseRadius,
+      Math.min(ph.senseRadius, FLEE_INITIATION_DISTANCE),
       (o) => o.speciesId !== c.speciesId && o.phenotype.diet > 0.34 && o.phenotype.mass > c.phenotype.mass * 1.2,
       3
     )
-    const threatened = predators.length > 0 && c.health < 0.9
+    // A fit animal with reserves in the bank reserves the flight option: an
+    // animal flees when a hunter is close enough to reach it and the animal
+    // can pay for the sprint. Fit animals do not wait to be bitten — under
+    // the previous gate only already-wounded animals ever fled, so calm
+    // adults were bitten at will and a small founder crop of hunters
+    // harvested the producer band to near-extinction inside one generation,
+    // and then starved once the food was gone. Fleeing still has to be
+    // fundable: an animal on a nearly empty stomach keeps eating, because
+    // standing its ground is the only option it can actually fund. Wounded
+    // animals run on a thinner reserve, because for them staying is what
+    // gets them killed.
+    const threatened =
+      predators.length > 0 &&
+      c.energy > ph.maxEnergy * (c.health < 0.9 ? 0.25 : 0.45)
     const starving = c.energy < ph.maxEnergy * 0.22
 
-    if (c.health < 0.3 && c.energy > ph.maxEnergy * 0.3) {
+    // Wounded animals heal by settling, and the engine's only repair mechanism
+    // is the REST branch below. The settle trigger must line up with the
+    // injury threshold that creates the problem (the threat gate penalises
+    // animals at health < 0.9): an adult wounded between 0.3 and 0.9 can fund
+    // neither another sprint nor a breeding attempt (the breeding gate needs
+    // 50% energy, the flee gate turns off at 45%), so without this it stalls
+    // between the two gates until the next attack kills it. A wounded animal
+    // settles to heal when no hunter is actually pressing it; an animal being
+    // chased cannot afford to stand still, and it keeps eating instead.
+    if (c.health < 0.9 && predators.length === 0 && c.energy > ph.maxEnergy * 0.45) {
       c.behavior = BEHAVIOR_REST
     } else if (starving) {
       c.behavior = ph.diet < 0.6 ? BEHAVIOR_FORAGE : BEHAVIOR_HUNT
@@ -591,14 +649,14 @@ export class Simulation {
     }
   }
 
-  /** Move `c` toward (tx,ty) by at most its speed. Returns tiles moved. */
-  private moveToward(c: Creature, tx: number, ty: number): number {
+  /** Move `c` toward (tx,ty) by at most its speed (scaled by `speedScale`). Returns tiles moved. */
+  private moveToward(c: Creature, tx: number, ty: number, speedScale = 1): number {
     const ph = c.phenotype
     let dx = tx - c.x
     let dy = ty - c.y
     const dist = Math.hypot(dx, dy)
     if (dist < 1e-6) return 0
-    const step = Math.min(ph.speed, dist)
+    const step = Math.min(ph.speed * speedScale, dist)
     dx = (dx / dist) * step
     dy = (dy / dist) * step
     let nx = c.x + dx
@@ -715,32 +773,147 @@ export class Simulation {
     return this.moveToward(c, c.tx, c.ty)
   }
 
+  /** Is `o` legal quarry for hunter `c` under the engine's predation gates? */
+  private preyIsLegal(c: Creature, o: Creature): boolean {
+    return (
+      o.alive &&
+      o.id !== c.id &&
+      o.speciesId !== c.speciesId &&
+      // Dependent young are not legal quarry. A newborn spawns beside its
+      // parents, cannot outrun a hunter, and for a strict meat-eater is an
+      // easy, energy-rich target: measured in the breeding probe, 26 of 59
+      // deaths in one window were juveniles — the new cohorts were being
+      // eaten as they were born, so recruitment died together with the
+      // adults and the producer bands could not replace themselves.
+      // maturityAge is the engine's own threshold for an animal standing on
+      // its own; until then the young are with their parents.
+      o.age >= o.phenotype.maturityAge &&
+      o.phenotype.mass < c.phenotype.mass * (0.35 + 1.7 * c.phenotype.diet) &&
+      o.energy > 0.2
+    )
+  }
+
+  /**
+   * Pick the quarry to chase. A hunt is committed: the current quarry is kept
+   * until it dies, stops being legal quarry, leaves the extended pursuit
+   * radius, or stops being worth chasing (see pursuitIsWorthwhile) — only then
+   * is a new one chosen, and the nearest worth-chasing animal wins.
+   *
+   * Re-picking every tick (the old behaviour, taking whichever legal animal the
+   * scan found first) makes pursuit thrash in dense populations: the target
+   * changes every tick, no chase ever reaches contact, and hunters starve in
+   * sight of abundant prey.
+   */
+  private pickQuarry(c: Creature): Creature | undefined {
+    const ph = c.phenotype
+    const previous = c.huntTarget >= 0 ? this.findCreature(c.huntTarget) : undefined
+    if (
+      previous &&
+      previous.alive &&
+      this.preyIsLegal(c, previous) &&
+      Math.hypot(previous.x - c.x, previous.y - c.y) <= ph.senseRadius * 1.5 &&
+      this.pursuitIsWorthwhile(c, previous)
+    ) {
+      return previous
+    }
+    let best: Creature | undefined
+    let bestDist2 = ph.senseRadius * ph.senseRadius
+    for (const o of this.neighborsWithin(c, ph.senseRadius, (o) => this.preyIsLegal(c, o), 32)) {
+      const dx = o.x - c.x
+      const dy = o.y - c.y
+      const d2 = dx * dx + dy * dy
+      if (d2 < bestDist2 && this.pursuitIsWorthwhile(c, o)) {
+        bestDist2 = d2
+        best = o
+      }
+    }
+    c.huntTarget = best ? best.id : -1
+    return best
+  }
+
+  /**
+   * Is a chase worth committing to? A hunt is an investment: the predator spends
+   * hunting-tick energy for every tick it takes to close the gap, and the most
+   * a bite can deliver is the energy the quarry's body holds, at this
+   * predator's absorption rate, capped by the room left in its own reserve.
+   * Compare the two and the hunt has a break-even distance — the classic
+   * giving-up rule of foraging models, derived here entirely from the engine's
+   * own phenotype numbers.
+   *
+   * Without this gate a hunter commits to every animal it can see. Measured
+   * founder carnivores paid ~0.52 energy per hunting tick and closed under a
+   * tile per tick on fleeing prey, so a chase that started at any distance cost
+   * more than a kill could ever pay back: the band bled its reserves chasing
+   * quarry it could not reach.
+   */
+  private pursuitIsWorthwhile(c: Creature, quarry: Creature): boolean {
+    const ph = c.phenotype
+    const dist = Math.hypot(quarry.x - c.x, quarry.y - c.y)
+
+    // A gap already within one stride costs nothing extra to attempt: strike.
+    if (dist < ph.speed + 0.6) return true
+
+    // What the bite can deliver: the energy in the quarry's body, at this
+    // predator's absorption rate, capped by the room left in its reserve.
+    const room = Math.max(0, ph.maxEnergy - c.energy)
+    const payoff = Math.min(quarry.energy, room) * (0.45 + 0.45 * ph.digest)
+
+    // A quarry only truly escapes if it can pay for running; wounded and
+    // desperate prey stand their ground, which is what makes them reachable.
+    // Mirrors the prey's own flight gate in the decision flow.
+    const preyFlees =
+      quarry.health >= 0.9 && quarry.energy > quarry.phenotype.maxEnergy * 0.45
+    const closing = ph.speed - (preyFlees ? quarry.phenotype.speed : 0)
+    if (closing <= 0.05) return false // cannot gain ground on this quarry at all
+
+    const huntTickCost = ph.basalRate + ph.moveCostCoefficient * ph.speed * ph.speed
+    const expectedCost = huntTickCost * (dist / closing)
+    return expectedCost <= payoff
+  }
+
   private behaveHunt(c: Creature): number {
     const ph = c.phenotype
     if (ph.diet < 0.2) return this.behaveForage(c)
-    const prey = this.neighborsWithin(
-      c,
-      ph.senseRadius,
-      (o) =>
-        o.speciesId !== c.speciesId &&
-        o.phenotype.mass < ph.mass * (0.35 + 1.7 * ph.diet) &&
-        o.energy > 0.2,
-      1
-    )
-    if (prey.length) {
-      const target = prey[0]
-      const dist = Math.hypot(target.x - c.x, target.y - c.y)
-      if (dist < 0.6) {
-        this.attack(c, target)
+    const quarry = this.pickQuarry(c)
+    if (quarry) {
+      const dist = Math.hypot(quarry.x - c.x, quarry.y - c.y)
+      // A strike covers the hunter's whole lunge: the bite connects when the
+      // hunter can cross the current gap and the quarry's next flee step in
+      // one stride. A fixed 0.6-tile reach deadlocks pursuit whenever the
+      // quarry flees just below the hunter's speed: prey always act before
+      // hunters in tick order, so the hunter lands exactly on top of the
+      // quarry at the end of each tick, the quarry slips away before the
+      // hunter's next decision, and the hunter burns energy forever without
+      // ever landing a hit — starving in sight of prey it is faster than.
+      if (dist < ph.speed + 0.6) {
+        this.attack(c, quarry)
         return 0
       }
-      return this.moveToward(c, target.x, target.y)
+      c.tx = quarry.x
+      c.ty = quarry.y
+      return this.moveToward(c, quarry.x, quarry.y)
     }
     if (ph.diet < 0.7) return this.behaveForage(c)
     if (Math.abs(c.tx - c.x) < 0.4 && Math.abs(c.ty - c.y) < 0.4) {
       this.pickWanderTarget(c)
     }
-    return this.moveToward(c, c.tx, c.ty)
+    // Searching without quarry: an animal that can still afford to search
+    // does so cruising, never sprinting. Move cost is quadratic in tiles
+    // moved, so cruising at a fraction of top speed costs the square of that
+    // fraction. Carnivores that sprinted across an empty landscape starved
+    // within sight of the prey recovery.
+    if (c.energy < ph.maxEnergy * 0.45) {
+      // No legal prey in sight and the reserve is below the chase floor: a
+      // depleted carnivore stops roaming and waits out the lean spell.
+      // Roaming an empty landscape spends the reserve on travel that cannot
+      // end in a kill; standing still bills half the maintenance rate, so a
+      // predator can hold on until the prey band recovers instead of dying a
+      // generation before it. Legal prey coming into sight still starts the
+      // normal hunt.
+      c.behavior = BEHAVIOR_REST
+      return 0
+    }
+    return this.moveToward(c, c.tx, c.ty, 0.4)
   }
 
   private behaveFlee(c: Creature, threat: Creature | undefined): number {
@@ -1063,7 +1236,8 @@ export class Simulation {
         localTemperature: sim.world.temperature[tile],
         phenotype,
         genome,
-        alive: true
+        alive: true,
+        huntTarget: -1
       }
       sim.creatures.push(c)
     }

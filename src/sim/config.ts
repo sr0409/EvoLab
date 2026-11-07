@@ -58,7 +58,7 @@ export interface EvolutionConfig {
 export interface PopulationConfig {
   /** Founder counts per diet archetype. */
   founders: Record<DietClass, number>
-  /** Hard ceiling on living creatures (a modelling limit, not biology). */
+  /** Hard ceiling on living creatures (a modelling limit, not biology; clamped to 4000). */
   maxCreatures: number
 }
 
@@ -192,7 +192,8 @@ export function normalizeConfig(config: SimConfig): void {
   v.mutationStrength = clampNum(v.mutationStrength, 0, 4)
   v.speciationThreshold = clampNum(v.speciationThreshold, 0.01, 0.6)
   const p = config.population
-  p.maxCreatures = Math.max(20, Math.min(20000, Math.round(p.maxCreatures)))
+  // Hard design limit: an EvoLab world runs at most a few thousand animals.
+  p.maxCreatures = Math.max(20, Math.min(4000, Math.round(p.maxCreatures)))
   for (const diet of DIET_CLASSES) {
     const requested = p.founders[diet] ?? 0
     p.founders[diet] = Math.max(0, Math.min(4000, Math.round(requested)))

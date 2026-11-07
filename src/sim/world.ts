@@ -514,4 +514,21 @@ export class World {
     for (let i = 0; i < this.size; i++) if (this.capacity[i] > 0) return i
     return this.size >> 1
   }
+
+  /**
+   * A habitable tile within `radius` tiles of `center`. Used to seed founder
+   * groups near each other so predator and prey lineages share a landscape.
+   * Falls back to a global spawn when the neighbourhood has no habitable tile.
+   */
+  findSpawnNear(rng: Rng, center: number, radius: number): number {
+    const cx = center % this.width
+    const cy = Math.floor(center / this.width)
+    for (let attempt = 0; attempt < 96; attempt++) {
+      const x = clamp(Math.round(cx + rng.symmetric(radius)), 0, this.width - 1)
+      const y = clamp(Math.round(cy + rng.symmetric(radius)), 0, this.height - 1)
+      const i = y * this.width + x
+      if (this.elevation[i] >= this.seaLevel + 0.04 && this.capacity[i] > 4) return i
+    }
+    return this.findSpawn(rng)
+  }
 }
