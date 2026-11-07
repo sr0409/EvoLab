@@ -169,7 +169,7 @@ const MAX_EVENTS = 500
 /** Below this many creatures, boom/crash alerts are not raised. */
 const EVENT_POP_THRESHOLD = 20
 /** Census fields sampled into chart series. */
-const CHART_FIELDS: readonly CensusField[] = [
+export const CHART_FIELDS: readonly CensusField[] = [
   'population',
   'speciesAlive',
   'temperature',

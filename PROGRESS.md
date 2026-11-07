@@ -1,10 +1,8 @@
 # Project status
 
 An artificial-life and ecosystem simulation: procedural terrain, creatures with heritable genomes,
-energy and nutrient cycles, speciation and extinction. The core is headless.
-
-**Nothing is viewable yet.** There is no app entry, no component and no renderer, so `npm run dev`
-shows a blank page. See §3.
+energy and nutrient cycles, speciation and extinction — now viewable live in the browser
+(`npm run dev` serves the interface described in §3).
 
 _Notes below were checked against the files in this working tree. Anything not established is filed as
 an open question in §6 rather than stated as fact._
@@ -18,7 +16,7 @@ an open question in §6 rather than stated as fact._
 | 1 Foundation | **mostly done** | Vite + TypeScript scaffold, seeded serialisable RNG, procedural world/terrain, headless engine with ordered fixed-timestep updates, save/restore state |
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
-| 4 Interface | **absent** | no `src/main.ts`, no `src/App.vue`, no components, no canvas renderer, no charts |
+| 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log. Verified against the running dev server: tick advances, canvas paints, panels populate |
 | 5 Quality | **thin, diagnostics run** | the two probes now run and print; one extra population-trace diagnostic added; still no assertion-based tests |
 | 6 Performance / E2E | **not started** | the `test:perf` / `test:e2e` scripts point at a config and a runner that do not exist |
 
@@ -44,7 +42,24 @@ src/sim/stats.ts      census, per-trait statistics, history ring buffers
 src/sim/config.ts     `defaultConfig()`, scenario presets (`SCENARIOS`)
 src/sim/types.ts      shared types, behaviour constants, `DEATH_CAUSES`, `dietClassOf`
 src/sim/engine.ts     the step function, `EnergyLedger`, `auditEnergy()`, event log, census history,
-                      `toState()` / `fromState()` with `SIM_STATE_VERSION`
+                      `toState()` / `fromState()` with `SIM_STATE_VERSION`, `CHART_FIELDS`
+
+src/main.ts           mounts `src/App.vue` into `index.html`
+src/env.d.ts          Vue SFC module declaration
+src/store.ts          owns the `Simulation` and the requestAnimationFrame loop (capped ticks per
+                      frame); reactive `ui` control state only (running / speed / map view / selected
+                      species / `frame`), `getSim()`, `stepOnce`, `newWorld`, scenario + speed presets
+src/App.vue           app shell; starts the loop on mount, stops it on unmount
+src/ui/ControlBar.vue run/pause/step, speed select, seed + new world, scenario presets, map-view
+                      buttons, live tick/season/creature readout
+src/render/WorldCanvas.vue  one-pixel-per-tile ImageData (terrain / biomass / temperature views)
+                      upscaled to the display canvas, then creature dots; reads only, never writes
+src/ui/StatsPanel.vue live census, diet-composition bars, trait averages, deaths by cause, the
+                      energy audit with a drift indicator
+src/ui/ChartsPanel.vue canvas line charts from `sim.seriesSamples` over `CHART_FIELDS`
+src/ui/SpeciesTable.vue species roster (lineage, abundance, peak, status); rows select a species for
+                      the map highlight
+src/ui/EventLog.vue   newest-first event list
 
 tests/physiology.test.ts     founder-archetype probe; runs (vitest)
 tests/scratch.test.ts        food-web cohort probe; rebuilt and runs (see §7)
@@ -52,27 +67,31 @@ tests/scratch-pursuit.ts     diagnostic: per-episode hunt outcomes; run with `np
 tests/scratch-population.ts  diagnostic: population trajectory against the ceiling; run with `npx vite-node`
 ```
 
-There is no `src/main.ts`, no `src/App.vue`, no `src/ui/`, no `src/render/` and no `src/sim/index.ts`
-barrel; the sim modules import each other directly and save/restore lives inside `engine.ts`
-(`toState()` / `fromState()`, `SIM_STATE_VERSION`).
+The sim modules import each other directly and save/restore lives inside `engine.ts`
+(`toState()` / `fromState()`, `SIM_STATE_VERSION`). The interface consumes that public API as it is;
+the only engine change it needed was exporting `CHART_FIELDS` for the chart field picker.
 
 ---
 
-## 3. Why nothing renders
+## 3. The interface (milestone 4, done)
 
-`index.html` mounts `#app` and requests `/src/main.ts`; `src/` contains only `src/sim/`. To see
-anything, these pieces have to be written:
+The pieces §3 used to list as missing are written and verified live:
 
-1. `src/main.ts` — create the app, own a `Simulation`, drive a bounded fixed-timestep loop
-   (`requestAnimationFrame`, a capped number of ticks per frame, pause / single-step).
-2. `src/App.vue` + control panel — play/pause/step, speed, seed, scenario presets.
-3. A canvas renderer that only *reads* simulation state: terrain and vegetation from `world`'s tile
-   arrays, creatures from `sim.creatures`, plus a minimap. It must never write simulation state.
-4. Live panels fed by the census history (`sim.seriesSamples` / `sim.seriesLatest`) and
-   `sim.auditEnergy()` — population by diet class, biomass and detritus pools, the energy audit,
-   per-trait statistics, the event log.
+1. `src/main.ts` + `src/store.ts` — the app entry, and a store that owns the `Simulation` and a
+   bounded `requestAnimationFrame` loop (`MAX_TICKS_PER_FRAME` caps a frame's work; speed presets
+   2–10 t/s; pause / single-step). The `Simulation` instance is deliberately **not** made reactive;
+   components read it through `getSim()` and redraw when `ui.frame` / `ui.epoch` advance.
+2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets.
+3. `src/render/WorldCanvas.vue` — a renderer that only *reads*: terrain/biomass/temperature from
+   `world`'s tile arrays into an ImageData buffer upscaled to the display canvas, creature dots on
+   top, species highlight on selection. It never writes simulation state.
+4. `StatsPanel` / `ChartsPanel` / `SpeciesTable` / `EventLog` — fed by `sim.lastCensus`,
+   `sim.seriesSamples`, `auditEnergy()`, `sim.species` and `sim.events`.
 
-Nothing in the simulation core has to change for this; the interface consumes the public API as it is.
+Verified against the dev server (`npm run dev`, http://localhost:5173): clicking Run advances the tick
+readout (measured 3296 → 3356 over 5 s), the season and creature counts update, the world canvas
+paints terrain and creatures, the census/species panels populate. `vue-tsc` is clean over the UI and
+`npm run test` stays green. Visual polish (layout, palette, minimap) is deferred.
 
 ---
 
@@ -287,8 +306,8 @@ assertions belong to step 5 below.
 5. Turn the measurements into permanent tests (`conservation.test.ts` for the energy and nutrient
    cycles, `population.test.ts` for a persisting multi-level food web, determinism and inheritance
    asserts); keep the probes as documentation of the diagnosis.
-6. Then the interface in §3: a canvas world plus live panels, so the diagnosis is visible rather
-   than only printed.
+6. ✅ The interface in §3 is written and verified live: a canvas world plus live panels, so the
+   diagnosis is visible rather than only printed. Visual polish deferred.
 7. Performance work only after there is a real render path to measure.
 
 ---
@@ -296,7 +315,7 @@ assertions belong to step 5 below.
 ## 9. Commands
 
 ```
-npm run dev                              # dev server — renders nothing today (no src/main.ts)
+npm run dev                              # dev server — the live interface (http://localhost:5173)
 npm run test                           # vitest — 2 files pass
 npm run typecheck                    # vue-tsc — clean (it type-checks tests/**/*.ts)
 npx vitest run tests/scratch.test.ts   # the food-web probe on its own
