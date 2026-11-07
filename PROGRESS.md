@@ -17,7 +17,7 @@ an open question in §6 rather than stated as fact._
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
 | 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log. Verified against the running dev server: tick advances, canvas paints, panels populate |
-| 5 Quality | **thin, diagnostics run** | the two probes now run and print; one extra population-trace diagnostic added; still no assertion-based tests |
+| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean |
 | 6 Performance / E2E | **not started** | the `test:perf` / `test:e2e` scripts point at a config and a runner that do not exist |
 
 ---
@@ -61,10 +61,16 @@ src/ui/SpeciesTable.vue species roster (lineage, abundance, peak, status); rows 
                       the map highlight
 src/ui/EventLog.vue   newest-first event list
 
+tests/helpers.ts             shared test config (`testConfig`: 48×48 world, 22 founders, cap 500) + `runSim` helper
+tests/conservation.test.ts   energy-cycle assertions over 1000 ticks (see §4)
+tests/determinism.test.ts    same seed → identical state; different seeds diverge
+tests/lineage.test.ts        inheritance/mutation bounds + engine genealogy assertions
+tests/population.test.ts     census bookkeeping: schedule, diet partitioning, birth/death accounting
 tests/physiology.test.ts     founder-archetype probe; runs (vitest)
 tests/scratch.test.ts        food-web cohort probe; rebuilt and runs (see §7)
-tests/scratch-pursuit.ts     diagnostic: per-episode hunt outcomes; run with `npx vite-node`
+tests/scratch-pursuit.ts     diagnostic: per-hunt-episode results; run with `npx vite-node`
 tests/scratch-population.ts  diagnostic: population trajectory against the ceiling; run with `npx vite-node`
+tests/scratch-audit.ts       diagnostic: energy ledger vs population trajectory; run with `npx vite-node`
 ```
 
 The sim modules import each other directly and save/restore lives inside `engine.ts`
@@ -118,8 +124,9 @@ clamp is death by `starvation`.
 
 What is **not** in place:
 
-- **Nothing asserts that the cycle closes.** There is no conservation test; `auditEnergy()` is only
-  printed by the probe (§7), never asserted against.
+- **The cycle is now asserted, its internals are not.** `tests/conservation.test.ts` holds the full
+  1000-tick energy audit to account (production, pool accounting, brood handover) within a float
+  margin. What remains unaccounted is the *inside* of `lifeHeat`:
 - **Metabolism, movement and thermoregulation are indistinguishable** inside `lifeHeat`, and the
   `releaseNutrients` return fraction is a constant rather than something derived or measured. An
   energy shortfall in an animal therefore cannot be attributed to a cause.
@@ -137,6 +144,11 @@ What is **not** in place:
 `npx vitest run` → 2 files pass; `npx vue-tsc --noEmit -p tsconfig.app.json` → clean; the §6
 question is answered, with the measurements written there.
 
+**Closed by the milestone-5 pass** (item 5 of this section): the engine now records offspring parents
+in the lineage store (`makeCreature` accepted no parent ids before). `npm run test` → 6 files / 25
+tests pass: conservation (1000-tick energy audit), determinism (same seed → identical state;
+different seeds diverge), inheritance/mutation bounds, engine genealogy and census bookkeeping.
+
 **Still open:**
 
 1. **The carnivore diet band does not survive one generation.** In a 6000-tick default-config
@@ -152,8 +164,9 @@ question is answered, with the measurements written there.
 3. **`npm run test:perf` and `npm run test:all` cannot run**: `vitest.perf.config.ts` does not exist.
 4. **`npm run test:e2e` cannot run**: `playwright` is neither a dependency nor installed, and there is
    no Playwright config or test directory.
-5. **No test asserts any core simulation behaviour** — conservation, determinism, inheritance,
-   speciation. The probes print diagnostics; none of them assert.
+5. ~~No test asserts core simulation behaviour.~~ Closed by the milestone-5 pass (see above). What is
+   *not* yet asserted is the ecology outcome the tests were built to track: no test can show a
+   persisting predator cohort or an un-capped population, because neither exists yet (items 1–2).
 
 ---
 
@@ -303,9 +316,11 @@ assertions belong to step 5 below.
 4. A candidate is accepted only if `scratch.test.ts` shows cohort persistence beyond ~1000 ticks
    **and** `scratch-population.ts` shows continuing predation deaths and a population not pinned
    at the ceiling.
-5. Turn the measurements into permanent tests (`conservation.test.ts` for the energy and nutrient
-   cycles, `population.test.ts` for a persisting multi-level food web, determinism and inheritance
-   asserts); keep the probes as documentation of the diagnosis.
+5. ✅ Done (milestone 5). The diagnosis became assertion tests: `tests/conservation.test.ts`
+   (1000-tick energy audit), `tests/determinism.test.ts`, `tests/lineage.test.ts` (inheritance /
+   mutation / engine genealogy), `tests/population.test.ts` (census bookkeeping). The probes remain
+   as diagnostic documentation. A test for a *persisting* multi-band food web is still impossible —
+   that outcome does not exist yet (step 3 above).
 6. ✅ The interface in §3 is written and verified live: a canvas world plus live panels, so the
    diagnosis is visible rather than only printed. Visual polish deferred.
 7. Performance work only after there is a real render path to measure.
@@ -316,7 +331,8 @@ assertions belong to step 5 below.
 
 ```
 npm run dev                              # dev server — the live interface (http://localhost:5173)
-npm run test                           # vitest — 2 files pass
+npm run test                           # vitest — 6 files / 25 tests pass (milestone 5)
+npm run build                          # vue-tsc + vite build — clean
 npm run typecheck                    # vue-tsc — clean (it type-checks tests/**/*.ts)
 npx vitest run tests/scratch.test.ts   # the food-web probe on its own
 npx vite-node tests/scratch-pursuit.ts # per-chase-episode diagnostic (prints)

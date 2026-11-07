@@ -422,7 +422,10 @@ export class Simulation {
     phenotype: Phenotype,
     speciesId: number,
     tile: number,
-    birthTick: number
+    birthTick: number,
+    parentA = -1,
+    parentB = -1,
+    mate = -1
   ): Creature {
     const c: Creature = {
       id: this.nextId++,
@@ -447,7 +450,7 @@ export class Simulation {
       alive: true,
       huntTarget: -1
     }
-    this.lineage.add(c.id, -1, -1, birthTick, -1)
+    this.lineage.add(c.id, parentA, parentB, birthTick, mate)
     this.species.markBorn(speciesId)
     return c
   }
@@ -995,7 +998,16 @@ export class Simulation {
       const genome = cloneGenome(childGenome)
       this.species.updateCentroid(speciesId, genome)
       const tile = this.spawnSpotNear(a)
-      const child = this.makeCreature(genome, buildPhenotype(genome), speciesId, tile, this.tick)
+      const child = this.makeCreature(
+        genome,
+        buildPhenotype(genome),
+        speciesId,
+        tile,
+        this.tick,
+        a.id,
+        b.id,
+        b.id
+      )
       child.energy = fromA + fromB
       child.maxEnergy = Math.max(child.maxEnergy, child.energy)
       child.pending = true
