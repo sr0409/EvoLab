@@ -583,16 +583,30 @@ export class Simulation {
     // between the two gates until the next attack kills it. A wounded animal
     // settles to heal when no hunter is actually pressing it; an animal being
     // chased cannot afford to stand still, and it keeps eating instead.
+    // Candidate (m): how much plant food this animal's juveniles are allowed
+    // to eat (0 for adults, and 0 for anything not in the strict band). It is
+    // computed here, before the decision chain, because a desperate juvenile
+    // and a merely hungry one need the same number.
+    const allowance = this.juvenilePlantAllowance(c)
+
     if (c.health < 0.9 && predators.length === 0 && c.energy > ph.maxEnergy * 0.45) {
       c.behavior = BEHAVIOR_REST
     } else if (starving) {
-      c.behavior = ph.diet < 0.6 ? BEHAVIOR_FORAGE : BEHAVIOR_HUNT
+      // A starving animal near the carnivore boundary eats whatever is in front
+      // of it; with allowance disabled this is the original ternary exactly.
+      c.behavior = ph.diet < 0.6 || allowance >= 0.5 ? BEHAVIOR_FORAGE : BEHAVIOR_HUNT
     } else if (threatened) {
       c.behavior = BEHAVIOR_FLEE
     } else if (canBreed) {
       c.behavior = BEHAVIOR_MATE
     } else if (hunger > 0.18) {
-      c.behavior = ph.diet < 0.5 ? BEHAVIOR_FORAGE : ph.diet > 0.66 ? BEHAVIOR_HUNT : this.rng.bool(0.5) ? BEHAVIOR_FORAGE : BEHAVIOR_HUNT
+      // A strict carnivore does not stand over a grazing animal and starve
+      // beside it — an adult in the band ignores plants outright. A juvenile
+      // with an allowance takes the concession at a probability equal to its
+      // size, so the graded diet gene keeps deciding how often it feeds.
+      if (ph.diet < 0.5) c.behavior = BEHAVIOR_FORAGE
+      else if (allowance > 0 && this.rng.bool(allowance)) c.behavior = BEHAVIOR_FORAGE
+      else c.behavior = ph.diet > 0.66 ? BEHAVIOR_HUNT : this.rng.bool(0.5) ? BEHAVIOR_FORAGE : BEHAVIOR_HUNT
     } else {
       c.behavior = BEHAVIOR_WANDER
     }
@@ -773,7 +787,15 @@ export class Simulation {
     const bite = Math.min(ph.bitePlant, room)
     const eaten = this.world.graze(tile, bite)
     if (eaten > 0) {
-      const absorbed = Math.min(room, eaten * ph.digest)
+      // Candidate (m): a strict carnivore's juvenile plant channel is not free.
+      // The animal's bite is already small at a meat diet, and its gut is
+      // tuned for meat rather than grass, so the concession absorbs only a
+      // fraction of what it crops — graded by the same diet gene. A lineage
+      // that leans on it as a juvenile pays for it in absorbed energy, which is
+      // what keeps selection acting on the diet gene instead of cancelling it.
+      const allowance = this.juvenilePlantAllowance(c)
+      const digest = allowance > 0 ? ph.digest * allowance : ph.digest
+      const absorbed = Math.min(room, eaten * digest)
       c.energy += absorbed
       const waste = eaten - absorbed
       if (waste > 0) this.deposit(tile, waste)
@@ -883,6 +905,21 @@ export class Simulation {
     return expectedCost <= payoff
   }
 
+  /**
+   * Candidate (m): juvenile plant allowance. A strict carnivore (diet > 0.66)
+   * that has not yet reached maturity may take plants; the same adult genome
+   * never may. The return value is the allowance strength: it is full at the
+   * carnivore boundary (diet 0.66) and falls to a floor at full carnivory
+   * (1.0), so a lineage's juvenile concession tracks how close its diet gene
+   * sits to the omnivore boundary — selection can act on the gene along that
+   * gradient instead of the concession being handed to the whole band.
+   */
+  private juvenilePlantAllowance(c: Creature): number {
+    const ph = c.phenotype
+    if (ph.diet <= 0.66 || c.age >= ph.maturityAge) return 0
+    return Math.max(0.2, Math.min(1, 1 - (ph.diet - 0.66) / 0.34))
+  }
+
   private behaveHunt(c: Creature): number {
     const ph = c.phenotype
     if (ph.diet < 0.2) return this.behaveForage(c)
@@ -906,6 +943,11 @@ export class Simulation {
       return this.moveToward(c, quarry.x, quarry.y)
     }
     if (ph.diet < 0.7) return this.behaveForage(c)
+    // Candidate (m): a strict carnivore with nothing legal in sight starves
+    // looking for it. An adult accepts that as the cost of its diet; a
+    // juvenile with an allowance does not have to walk an empty landscape
+    // when there is grass under its feet.
+    if (this.juvenilePlantAllowance(c) > 0) return this.behaveForage(c)
     if (Math.abs(c.tx - c.x) < 0.4 && Math.abs(c.ty - c.y) < 0.4) {
       this.pickWanderTarget(c)
     }

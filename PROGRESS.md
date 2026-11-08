@@ -174,6 +174,11 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
    founder cohort is gone by the end of the first window (4 starvation, 2 thermal deaths). So the band's
    problem is no longer contact, price or distance: it is that a strict meat-eater's bill exceeds what this
    prey density pays it, and no offspring survive the gap (§6B, gate 1).
+   **Re-measured a third time, under candidate (m)'s allowance (§6D).** The plant half of that gap is
+   closed: a strict-diet band's own young may now graze, and on `evolab-3` the band is alive at every
+   census from tick 250 and ends the run with 11 adult strict-heritage animals. What is still open is the
+   other half of the same sentence — on `evolab` and `evolab-2` the founding cohort dies before it has a
+   juvenile for that rule to act on, and no seed but `evolab-3` carries a band to the 3000-tick census.
 2. **The population ceiling, not ecology, is what regulates numbers.** Same trace: the herd fills
    `maxCreatures` (3200) by ~tick 750 and stays pinned exactly there for the remaining 5000+
    ticks while vegetation stays healthy. Raising the ceiling to 12000 does not find a stable
@@ -309,6 +314,7 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | **Candidate (j): recruitment-quota predation on juvenile prey** — `preyIsLegal` exception: an animal below its own `maturityAge` is legal quarry only while its own species is growing, the allowance (`quarryQuota`, recomputed at every census from the growth that census recorded, capped at one kill per animal the species already has) being the growth itself. Implemented in `engine.ts`, measured A/B on identical seeds with `tests/scratch-carnivore-quota.ts` | The rule engages and it changes what is eaten: juvenile kills **49 / 10 / 747** where the standing rule records **0 / 0 / 0**, adult kills fall **338 → 168, 161 → 157, 6837 → 3793**. On `evolab-3` it produces the largest mid-run band this project has measured — **26–28 animals at ticks 750–1250** — and then loses it: **0 from tick 2000**. Strict band at the 3000-tick census: **0 / 0 / 0**, against **0 / 0 / 11** with the rule off on the same seeds. No seed collapses (3196 / 3192 / 3198), and mature prey are plentiful throughout (≈2900) | **Rejected; the engine change is reverted.** It is the first candidate that made a carnivore band *bigger*, and that is what makes it informative: the band was never short of food or of quarry, it over-shoots, the population sits back on the 3200 ceiling from tick 1750, and the band is gone 250 ticks later. The one configuration that reaches 3000 under the standing rule is the one where the population stays **under** the cap — which is the reading candidate (h) already gave, and it points at §8 step 3.j, not at another behavioural gate |
 | **Candidate (k): lower primary productivity, cap held fixed** — `environment.sunlight` ladder 1.00 → 0.85 → 0.70 → 0.55 plus a famine-level preset (0.42 sunlight / 0.62 rainfall), `maxCreatures` unchanged at 3200 (`tests/scratch-productivity-ladder.ts`: 5 rungs × seeds `evolab`, `evolab-2`, `evolab-3` × 3000 ticks, no engine change) | The baseline rung reproduces candidate (h) exactly — band 11 at the 3000-tick census on `evolab-3`, 0 on the other two seeds — the probe measures the same engine. The lowered rungs do **not** move the population off the ceiling: every seed that survives peaks at 3189–3201 and sits capped for 6–9 of its 9 post-bootstrap censuses. What lowering productivity changes is the bootstrap, not the ceiling: `evolab-2` dies out entirely at rungs 0.70 and 0.55 (peaks 0 and 5), while `evolab` and `evolab-3` still reach the cap. The band is the first casualty: **0/3 seeds carry a strict band at 3000 on any lowered rung** — at sun 0.85 the `evolab-3` band that survives at default productivity is gone by tick 750. The only rung that never touches the cap is the famine preset (no capped census on any seed), and it is a broken world: `evolab` and `evolab-2` end at population 0, `evolab-3` crawls 55 → 2105 over 3000 ticks with **zero strict animals at every census** | **Rejected, no engine or config change.** A sub-cap community and a surviving band are anti-correlated in this engine: every configuration that can carry a band fills the cap, and the only configuration that stays under it cannot bootstrap a founding community at all |
 | **Candidate (l): pack hunting — a pack widens its own prey-mass window** — a strict carnivore (`diet > 0.66`) with mature conspecifics in sight hunts as a pack: a new `packHuntBonus` counts up to 3 mature same-species bandmates inside its own senses and scales the `preyIsLegal` mass window by `1 + 0.35 × sociality × packmates`, `sociality` being the engine's existing heritable social trait (founder carnivores 0.35); a solitary or unsocial hunter keeps exactly the solo rule. Implemented in `engine.ts` (`preyIsLegal` / `pickQuarry`), measured A/B on identical seeds with `tests/scratch-pack-hunt.ts`, the pack arm patching the rule onto the committed engine at runtime | The rule fires on every seed — max window factor **1.52 / 1.69 / 1.66** — and opens nothing: quarry picks on prey above the solo window **0 / 0 / 1** across the six runs, kills on prey above the solo window **0 / 0 / 0**. §6B's "too big to be prey: 0" was not predation failing a size test; it is the true state of these faunas — the engine never declines a prey for size, because it never meets one outside its own window. Band at the 3000-tick census: **0 / 0 / 7** against **0 / 0 / 11** with the rule off on the same seeds: the `evolab` and `evolab-2` runs are identical, and the one seed where a band reaches 3000 ends with a smaller band (11 → 7, population 3198 → 3191, predation 6837 → 6829) | **Rejected; the engine change was reverted.** A pack changes what predation may eat, and in these worlds nothing is declined for size, so there is nothing for it to unlock. That closes §6B's size asymmetry as a lever. The binding constraint stays where (h) left it — the founder cohort's energy flow and the recruitment gap (no plant channel for a strict diet, offspring not surviving the founding overharvest) — not which prey is legal quarry |
+| **Candidate (m): juvenile plant allowance for strict carnivores** — new gate `juvenilePlantAllowance(c)` in `engine.ts`: 0 for adults and for inherited diet ≤ 0.66; for an animal in the band below `maturityAge` it returns `max(0.5, 1 − (diet − 0.66) / 0.68)` — full at the carnivore boundary, falling to a 0.5 floor at full carnivory. It is consulted at the engine's three existing plant-food decisions (a starving band juvenile with allowance ≥ 0.5 forages instead of hunting; a hungry band member draws foraging with exactly the allowance as probability; a band juvenile in `behaveHunt` with no legal prey falls back to grazing) and it scales the plant energy absorbed, so the channel has a cost the diet gene still prices; animals outside the band, and adults, behave exactly as in the committed engine. Measured A/B on identical seeds with `tests/scratch-juvenile-plant-allowance.ts`, the candidate switched off at runtime for the baseline arm | The baseline arm reproduces the recorded baseline — band 0 / 0 / 11 at 3000, populations 3198 / 3196 / 3198, predation 338 / 161 / 6837 — so the two arms differ by the rule alone. On `evolab-3` the band is alive at **every census from tick 250 to 3000**: peak **88 members (50 adult)** at tick 2750, run end **20 members (11 adult)**, inherited-diet census **[0.90+ 20], mean 0.965** — strict lineages, against the baseline's 11 members at mean 0.676 hugging the 0.66–0.70 edge. Band juvenile intake 419.9 E plants + 17,615.4 E meat; global predation 6837 → **16,782**; the world is no longer pinned at the 3200 ceiling — the population swings 281 → 3063 instead. But the band is leaky (202 adult and 240 recruit starvation deaths attributed), and on `evolab` and `evolab-2` it ends at zero members with **0 adult recruits all run on both arms** — the rule never acquires a subject there | **Kept; partial success, not accepted.** It is the first candidate in this loop to produce persisting carnivore lineages rather than census churn, and it closes the plant half of §6B gate 1 — but it holds on 1 of 3 seeds, and on the other two the failure sits upstream of the allowance: the founding cohort dies before any band juvenile exists |
 
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
@@ -426,15 +432,53 @@ already adding to exactly that bill, and thermal stress is a top-three cause of 
   is to widen the window can move the band. The binding constraint stays where (h) and (j) left it —
   the founder cohort's own energy flow and the recruitment gap (§6B gate 1).
 
+**(m) attacked that constraint directly, and split it.** The mechanism: `juvenilePlantAllowance(c)`
+in `engine.ts` returns 0 for adults and for any animal with inherited diet ≤ 0.66, and for an animal in
+the band below `maturityAge` it returns `max(0.5, 1 − (diet − 0.66) / 0.68)` — full allowance at the
+carnivore boundary, falling to a floor of 0.5 at full carnivory. It is consulted at the three places
+where the engine already decides whether an animal eats plants — the starving branch, the hungry
+animal's choice, and `behaveHunt`'s fallback when nothing legal is in sight — replacing fixed diet
+thresholds, and it scales the plant energy the animal absorbs, so the concession has a cost and the
+diet gene still decides how much of it any lineage gets. An animal outside the band, and any adult,
+meets exactly the committed engine. Measured A/B on identical seeds (`tests/scratch-juvenile-plant-allowance.ts`),
+the candidate switched off at runtime for the baseline arm.
+
+- **The baseline arm was checked before anything was compared.** Switched off, the probe reproduces
+  the recorded baseline census: band 0 / 0 / 11 at 3000, populations 3198 / 3196 / 3198, predation
+  338 / 161 / 6837. The two arms differ by the rule alone.
+- **What it changes.** On `evolab-3` the band is alive at every census from tick 250 to 3000, peaks at
+  88 members (50 of them adult) at tick 2750, and ends the run with 20 members, 11 of them adult. The
+  world it lives in is not the ceiling-pinned one of every earlier candidate: the population oscillates
+  between 281 and 3063 instead of sitting at 3196–3201, and predation becomes a real term — 16,782
+  global deaths against the baseline's 6837. The decisive contrast is **who is in the band at the end**:
+  the candidate's 20 members have inherited diets averaging 0.965, every one at 0.90+ — strict
+  carnivores that stayed in the band because their juvenile stage could close the gap. The baseline's 11
+  survivors average 0.676, every one inside 0.66–0.70 — animals that only held the band by sitting on
+  the engine's existing sub-0.7 grazing fallback (424.2 E of plants as juveniles, 812.1 E as adults).
+  The candidate band runs both channels: 419.9 E plants and 17,615.4 E meat through its juveniles.
+- **What it does not change.** On `evolab` and `evolab-2` the band is zero at every census in both arms;
+  neither run ever records an adult recruit in the band. The allowance never gets a subject there: the
+  founding cohort dies in the first windows, before it produces anything the rule could act on. And the
+  band it did produce is leaky — its attributed deaths are 202 adult and 240 recruit starvation deaths,
+  the same founding-overharvest signature §6B describes, now inside a band that survives.
+
+**Partial success, kept.** The plant half of §6B gate 1 is closed: a strict-carnivore band can raise
+offspring that survive the gap and stay strict, and when such a band exists it turns the world's
+census churn into oscillation under the ceiling rather than a ceiling sit-in. It is not accepted — the
+bar asks two seeds, and on two of the three seeds nothing ever reaches the stage where the rule would
+matter. The remaining failure is upstream of every juvenile rule: the founding cohort itself.
+
 **The acceptance bar, restated.** §8 step 4 used to ask for "the founder band still alive at tick 3000".
 Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
 `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can be alive at tick 3000, and
 carnivore offspring never close the gap (candidate g/gate B-1). The bar is therefore measured as it was
 written in §6D: **a carnivore band — any individuals, phenotype diet > 0.66 — alive at the 3000-tick
-census on at least two seeds**. Current state: 120/18/6 reaches 3000 with a live band on 1 of 3 seeds
-(`evolab-3`), and reaches tick 500 with a live band on 2 of 3. Not yet met; the remaining barrier is
-§6B gate 1 (a strict meat-eater has no plant channel and no offspring that survive the gap), not contact,
-price, distance or temperature.
+census on at least two seeds**. Current state with candidate (m)'s allowance in the engine: a live band
+at 3000 on 1 of 3 seeds — on `evolab-3` it is alive at every census from tick 250 and ends with 20
+members, 11 adult, all strict-heritage diets — while `evolab` and `evolab-2` stand at 0 on every census
+of both arms. Not yet met. The plant half of §6B gate 1 is closed — band offspring now survive the gap
+and stay in the band — and what remains is upstream of it: on two seeds the founding cohort dies before
+it produces any juvenile a rule could act on.
 
 **The test world needs its own ratio.** The 48×48 fixture in `tests/helpers.ts` is 6.5% of the default
 world's area with a 500-creature cap, and candidate (g) made its 15/4/3 founder loading collapse: on seeds
@@ -521,6 +565,7 @@ part of the vitest suite):
 | `tests/scratch-carnivore-quota.ts` | the candidate (j) A/B measurement: every seed run twice, once with the recruitment-quota exception live in `preyIsLegal` and once switched off at runtime, same config, same world |
 | `tests/scratch-productivity-ladder.ts` | the candidate (k) measurement: `environment.sunlight` rungs 1.00 → 0.85 → 0.70 → 0.55 plus a famine preset (0.42 sunlight / 0.62 rainfall) with `maxCreatures` held at 3200, asked as the acceptance test itself on three seeds × 3000 ticks |
 | `tests/scratch-pack-hunt.ts` | the candidate (l) A/B measurement: the pack mass-window rule switched on and off on identical seeds, the candidate patched onto the committed engine at runtime; counts the strongest window factor the rule computed, the quarry picks and kills it made possible above the solo window, and band size at every census |
+| `tests/scratch-juvenile-plant-allowance.ts` | the candidate (m) A/B measurement: the juvenile plant allowance switched on and off on identical seeds, the switched-off arm verified against the recorded baseline before any comparison; separates founding cohort from recruited band, and reports the band's plant and meat intake, its inherited-diet census, and every attributed death |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -593,13 +638,31 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       window — so a mechanism whose only effect is to widen the legal-prey window cannot move the
       band. What the acceptance test still needs must act on the constraint that does bind: the
       founder cohort's energy flow and the recruitment gap (§6B gate 1). (§6D candidate l, §6E.)
+   m. 🟡 **juvenile plant allowance for strict carnivores** — a `juvenilePlantAllowance(c)` in
+       `engine.ts`: a band animal below its `maturityAge` is given a plant channel scaled as
+       `max(0.5, 1 − (diet − 0.66) / 0.68)`, consulted wherever the engine already decides an animal
+       eats plants, and the plant energy it absorbs is scaled by the same factor; adults and animals
+       outside the band are untouched. Implemented in `engine.ts`, measured A/B on identical seeds with
+       `tests/scratch-juvenile-plant-allowance.ts`. **Kept; partial success.** The baseline arm
+       reproduces the recorded baseline before any comparison; then, on `evolab-3`: a band alive at
+       every census from tick 250, peaking at 88 (50 adults) and ending at 20 with 11 adults and
+       inherited diets averaging 0.965 — strict lineages surviving the gap, where every earlier
+       candidate's survivors were boundary drifters at 0.676 — with the world oscillating 281–3063
+       instead of sitting pinned at the ceiling, and predation reaching 16,782. On `evolab` and
+       `evolab-2` nothing changes: 0 at every census on both arms, because the founding cohort dies
+       before the rule has anything to act on. The plant half of §6B gate 1 is closed; what remains is
+       upstream of every juvenile rule — the founding cohort itself, which on two of three seeds dies
+       before producing a juvenile the rule could reach. (§6D candidate m.)
 4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
    (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
    seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here
    until now — "the founder band is still alive at tick 3000" — cannot be met by design: founders are
    seeded as adults with `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can
-   still be alive at tick 3000. Standing for the 120/18/6 default today: a band alive at 3000 ticks on 1
-   seed of 3, a band alive at tick 500 on 2 of 3, no seed collapsed — **not met yet**. A candidate that
+   still be alive at tick 3000. Standing for the 120/18/6 default, with candidate (m)'s allowance in the
+   engine: a band alive at 3000 ticks on 1 seed of 3 — on `evolab-3` a band alive at every census from
+   tick 250, ending at 20 members with 11 adults, at inherited diets averaging 0.965, in a world
+   oscillating 281–3063 rather than capped — and 0 at every census on `evolab` and `evolab-2`, on both
+   arms, with no seed collapsed. **Not met yet.** A candidate that
    only works while the population is pinned at the 3200 ceiling does not count.
 5. ✅ Done (milestone 5). The diagnosis became assertion tests: `tests/conservation.test.ts`
    (1000-tick energy audit), `tests/determinism.test.ts`, `tests/lineage.test.ts` (inheritance /
