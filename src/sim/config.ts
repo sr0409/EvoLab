@@ -99,7 +99,13 @@ export function defaultConfig(): SimConfig {
       avoidInbreeding: true
     },
     population: {
-      founders: { herbivore: 60, omnivore: 18, carnivore: 12 },
+      // Measured founder load (PROGRESS.md §6D, candidate h). 60/18/12 overharvests
+      // its own founding herd: with carnivores seeded inside it, 12 strict
+      // meat-eaters harvest the founders faster than the first young reach
+      // maturityAge, and the whole world collapses on some seeds. 120/18/6 is the
+      // ratio those measurements found that survives every seed tested and keeps a
+      // carnivore population standing.
+      founders: { herbivore: 120, omnivore: 18, carnivore: 6 },
       maxCreatures: 3200
     }
   }

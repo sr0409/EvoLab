@@ -3,7 +3,7 @@ import { Simulation } from '../src/sim/engine'
 import { dietClassOf } from '../src/sim/types'
 import { TRAIT_INDEX } from '../src/sim/traits'
 import type { CensusRecord } from '../src/sim/stats'
-import { testConfig } from './helpers'
+import { FOUNDER_COUNT, testConfig } from './helpers'
 
 /**
  * Population dynamics (milestone 5, item 5).
@@ -41,11 +41,11 @@ describe('population dynamics', () => {
   })()
 
   it('the population grows from its founders and sustains itself', () => {
-    expect(censuses[0].population).toBe(22) // the seeded founders
+    expect(censuses[0].population).toBe(FOUNDER_COUNT) // the seeded founders
     for (const census of censuses) {
       expect(census.population).toBeGreaterThan(0)
     }
-    // Measured growth on this seed is 22 -> ~500 within 400 ticks. The
+    // Measured growth on this seed is FOUNDER_COUNT -> ~500 within 400 ticks. The
     // assertion is deliberately loose: the engine must show real growth,
     // not a specific trajectory.
     expect(censuses[censuses.length - 1].population).toBeGreaterThan(200)
@@ -86,7 +86,7 @@ describe('population dynamics', () => {
     }
     // Every born creature gets a lineage record, so total births == registered
     // creatures - founders. Deaths recorded in censuses == the engine's own count.
-    expect(births).toBe(sim.lineage.count - 22)
+    expect(births).toBe(sim.lineage.count - FOUNDER_COUNT)
     expect(deaths).toBe(sim.totalDeaths())
   })
 

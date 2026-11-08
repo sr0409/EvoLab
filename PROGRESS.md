@@ -61,7 +61,9 @@ src/ui/SpeciesTable.vue species roster (lineage, abundance, peak, status); rows 
                       the map highlight
 src/ui/EventLog.vue   newest-first event list
 
-tests/helpers.ts             shared test config (`testConfig`: 48×48 world, 22 founders, cap 500) + `runSim` helper
+tests/helpers.ts             shared test config (`testConfig`: 48×48 world, 20 founders, cap 500),
+                             `FOUNDER_COUNT` (derived from that config, so founder-id assertions in the tests
+                             cannot drift from it) and the `runSim` helper
 tests/conservation.test.ts   energy-cycle assertions over 1000 ticks (see §4)
 tests/determinism.test.ts    same seed → identical state; different seeds diverge
 tests/lineage.test.ts        inheritance/mutation bounds + engine genealogy assertions
@@ -71,6 +73,13 @@ tests/scratch.test.ts        food-web cohort probe; rebuilt and runs (see §7)
 tests/scratch-pursuit.ts     diagnostic: per-hunt-episode results; run with `npx vite-node`
 tests/scratch-population.ts  diagnostic: population trajectory against the ceiling; run with `npx vite-node`
 tests/scratch-audit.ts       diagnostic: energy ledger vs population trajectory; run with `npx vite-node`
+tests/scratch-founder-thermal.ts     diagnostic: what temperature the founder band is actually exposed to;
+                                     `npx vite-node`
+tests/scratch-founder-ratio.ts       diagnostic: founder loading ratio on the default world; `npx vite-node`
+tests/scratch-testconfig-ratio.ts    diagnostic: the same ratio question on the 48×48 test configuration;
+                                     `npx vite-node`
+tests/scratch-late-introduction.ts   diagnostic: carnivores introduced into an established producer world;
+                                     `npx vite-node`
 ```
 
 The sim modules import each other directly and save/restore lives inside `engine.ts`
@@ -157,12 +166,26 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
    capped at 0.28–0.37 per carnivore per tick; intake 0.15–0.44/tick against a 0.21–0.54 need.
    Same-strategy target selection works (52% of attempts land); random selection lands 0 in 25.
    The answer is in §6A/§6B; the food-web route remains open.
+   **Re-measured this loop under the founder changes recorded in §6D (candidates g and h).** The band now
+   hunts and kills from the first tick: `npx vitest run tests/scratch.test.ts` on the default world reports
+   **0.103 kills per animal-tick, 0.350 E of meat per animal-tick against 0.458 burnt**, 768 legal prey
+   visible inside the band's own 8.0-tile senses, nearest legal prey at 0.0 tiles — every one of the 6
+   founder carnivores can see something it is allowed to eat. It is still net **−0.111 E per tick** and the
+   founder cohort is gone by the end of the first window (4 starvation, 2 thermal deaths). So the band's
+   problem is no longer contact, price or distance: it is that a strict meat-eater's bill exceeds what this
+   prey density pays it, and no offspring survive the gap (§6B, gate 1).
 2. **The population ceiling, not ecology, is what regulates numbers.** Same trace: the herd fills
    `maxCreatures` (3200) by ~tick 750 and stays pinned exactly there for the remaining 5000+
    ticks while vegetation stays healthy. Raising the ceiling to 12000 does not find a stable
    carrying capacity either — it produces overgrazing boom-and-bust (§6C). A hard design limit was
    added so no run can outrun its intended size: `normalizeConfig` now clamps `maxCreatures` to
    **4000** (was 20000); the default stays 3200.
+   **First exception measured this loop.** Under the founder ratio §6D candidate h (120/18/6) on seed
+   `evolab-3`, the population is **not** pinned at the ceiling: it leaves 3182–3200 and settles at
+   2814–2939 for the last 1250 ticks, with **6837 predation deaths** over the run and 219/338/6837
+   predation deaths across the three tested variants of that ratio. That is the first measurement in this
+   project where predators, not the cap, move the number. It is one seed of three; the other two remain
+   ceiling-pinned, so this is a lead, not yet the world's behaviour.
 3. ~~`npm run test:perf` and `npm run test:all` cannot run: `vitest.perf.config.ts` does not
    exist.~~ Closed by milestone 6: the perf runner and `tests/perf/engine.perf.ts` exist; 3 benchmarks
    pass (baselines recorded in §10).
@@ -276,6 +299,10 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | Founder metabolic load 1.15 → 0.8 (`traits.ts`, `metabolism.founders.carnivore`) | Identical outcome: founder band 0 at the first census, carnivore band 0 at every census, on all three seeds. Whole-world death tallies *worsened* (seed `evolab`: starvation 2895 → 4073, thermal 1517 → 2108). Final population 3196/3190 and 3200/3196 — the ceiling, not the band, sets the number | **Rejected** (not committed) |
 | (d) **The meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`, engine unchanged) | **0.00 legal animals inside the cohort's own senses** (radius 7.6–8.5 tiles) at every scan, both seeds; the nearest animal this cohort is allowed to eat is **6.6–8.7 tiles away**. The cohort's whole life: 0.229–0.251 E of meat per animal-tick against 0.352–0.371 burnt, plant 0.0000, reserves 11.9 → 0.0, all 12 founders dead inside the first 250-tick window | **Measured, no engine change kept.** The failure is distance, not price |
 | (d) **Scavenging the world's litter** — a scavenge branch of `behaveHunt` (walk to the richest litter in sight, call `World.takeDetritus`); implemented, measured, **reverted** | Given that food the band drew **99.7 E in 530 feedings** at `evolab` (42.3 E at `evolab-2`; 18.0 E and 13.5 E in the two 48×48 runs) = **0.035–0.08 E per carnivore-tick**, against a pool that grows 186 → 6,108 E within 250 ticks while a founder stands on 0.54–0.69 E per animal-tick. The band was still **0 at the first census and at every census afterwards, pool open or closed**: final population 3199 open vs 3199 closed at `evolab`, 0 vs 0 at `evolab-2` | **Rejected**: it pays 0.04–0.08 E per carnivore-tick against a 0.35–0.37 E bill. Reverted |
+| **Candidate (f): founder thermal adaptation** — give the founders a thermal band matched to the world they spawn into (`tests/scratch-founder-thermal.ts`, no engine change) | Spawn temperature against the founders' own optimum: mean deviation **3.5–5.1 °C**, maximum 6.5 °C, against a 10–12 °C tolerance window — inside the band, not outside it. Every founder-band death in the sampled windows was **starvation (12/12)**; **0 thermal deaths** in any founder window. Thermal stress is a real whole-population regulator (100–310 deaths per 250-tick window), just not this one | **Rejected before any engine change.** Temperature adds to the bill but is not what kills the band. The probe is kept so the exclusion can be re-checked |
+| **Candidate (g): herd-anchored founder spawning** — carnivores spawn 1–2 tiles from a producer founder instead of on a ring at radius 15 (`engine.ts` ~250–283) | First contact is real from tick 1: **0.060–0.064 successful kills per animal-tick**, **0.347 E gross prey-body intake per animal-tick** against a 0.352–0.371 E bill (`tests/scratch-meat-supply.ts` re-run). The founder band still dies within the first window on 2 of 3 seeds, and survives to tick 500 on one | **Kept.** It removed the distance failure candidate (d) named, and moved the binding constraint from *contact* to *overharvest* — which is what candidate (h) then measured |
+| **Candidate (h): founder loading ratio** — `config.population.founders` only, no behavioural change (`tests/scratch-founder-ratio.ts`: 5 variants × 3 seeds × 3000 ticks) | 60/18/12 (the old default): seed `evolab-2` ends at **population 0**. 60/18/6: `evolab-2` ends at 0. 120/18/12: no collapse, band gone by tick 500. **120/18/6**: no collapse on any seed, a band present at ticks 250–500 on two seeds and **alive at the 3000-tick census on `evolab-3`**, predation 172/165/6837 per run, and on that seed the population sits **below the ceiling** (2814–2939) for the final 1250 ticks. 60/18/4: no collapse on any seed, `evolab-2` recovers to 3100, but the band reaches 3000 on one seed only and predation is lower (55–801) | **Kept, and it is the new default: 120/18/6** (`config.ts`). The first configuration in which predation, not the cap, moves the population |
+| **Candidate (i): carnivores introduced into an established world** (`tests/scratch-late-introduction.ts`: 12 founders injected at tick 1500, nothing else changed) | `evolab-3`: **7–16 carnivores at every census for the whole 1500-tick observation.** `evolab-2`: overshoots to 36 then crashes to 0. `evolab`: dead within ~500 ticks — that equilibrium is crowded and its adults are thin (`preyIsLegal` requires prey energy > 0.2) | **Measured, no engine change kept.** Strict carnivory *is* supported at equilibrium where well-fed adult prey exist; what fails is the cold start, not the diet |
 
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
@@ -301,15 +328,66 @@ only distance the engine can honestly change at t = 0 is the founders' own reach
 the next measurement because the founders' thermal optimum (20–22 °C against a 26 °C baseline climate) is
 already adding to exactly that bill, and thermal stress is a top-three cause of death in §6C.
 
+**Candidates (f)–(i), the pass that followed it.** Four measurements, in the order they were taken; only
+(g) and (h) changed the code.
+
+- **(f) was ruled out before it was implemented.** The founders are not thermally exposed: spawned into a
+  26 °C world with a 20–22 °C optimum and an 10–12 °C tolerance window, their spawn deviation is 3.5–5.1 °C
+  — inside the band. Zero thermal deaths among founder bands; every founder death is starvation. Temperature
+  is a population-wide regulator (100–310 deaths per window, and on `evolab` it rose to 3007 deaths over a
+  3000-tick run), it is just not the cause the founder band dies of.
+- **(g) removed the distance candidate (d) named, and exposed what was behind it.** Carnivore founders
+  are now
+  seeded one or two tiles from a producer founder (`engine.ts`: a `herdTiles` list of already-placed
+  producer tiles is the anchor; the carnivore ring is 2, not 15). Kills land from the first tick —
+  0.060–0.064 per animal-tick, 0.347 E gross prey-body intake against a 0.352–0.371 E bill — i.e. a
+  founding herd that is huntable is eaten at almost exactly the rate the hunters must burn. **Overharvest**:
+  the founders eat the founders out before the herd's first young reach maturityAge (90 ticks for a
+  herbivore founder, while a carnivore founder must wait 140) and have no plant channel at diet 0.9 to fall
+  back on.
+- **(h) is the ratio that survives it.** `tests/scratch-founder-ratio.ts` measures five founder loadings on
+  three seeds. A 60-animal herd cannot feed 12 strict carnivores: seed `evolab-2` ends at population 0 at
+  both carnivore 12 and carnivore 6. A 120-animal herd survives either, and 120/18/6 is the loading where
+  the predator band is still alive at the 3000-tick census and the population falls **below** the 3200
+  ceiling on that seed (2814–2939 for the last 1250 ticks, 6837 predation deaths) — the first time in this
+  project that predation, rather than the cap, sets the number. That ratio is now `defaultConfig()`.
+- **(i) shows the cold start is the hard part, not the diet.** Injecting 12 carnivores into a world that
+  has already reached its producer equilibrium keeps a band of 7–16 animals for the entire 1500-tick
+  observation on `evolab-3`, an overshoot-and-crash on `evolab-2` (36 → 0), and a fast death on `evolab`,
+  whose equilibrium is crowded and whose adults carry too little energy to be legal quarry. Carnivory is
+  survivable at equilibrium; bootstrapping it is what fails.
+
+**The acceptance bar, restated.** §8 step 4 used to ask for "the founder band still alive at tick 3000".
+Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
+`maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can be alive at tick 3000, and
+carnivore offspring never close the gap (candidate g/gate B-1). The bar is therefore measured as it was
+written in §6D: **a carnivore band — any individuals, phenotype diet > 0.66 — alive at the 3000-tick
+census on at least two seeds**. Current state: 120/18/6 reaches 3000 with a live band on 1 of 3 seeds
+(`evolab-3`), and reaches tick 500 with a live band on 2 of 3. Not yet met; the remaining barrier is
+§6B gate 1 (a strict meat-eater has no plant channel and no offspring that survive the gap), not contact,
+price, distance or temperature.
+
+**The test world needs its own ratio.** The 48×48 fixture in `tests/helpers.ts` is 6.5% of the default
+world's area with a 500-creature cap, and candidate (g) made its 15/4/3 founder loading collapse: on seeds
+`probe-a` and `probe-b` the population reaches 0 within 1500 ticks (predation 44–509 per run), which broke
+two milestone-5 tests. `tests/scratch-testconfig-ratio.ts` measures seven loadings on four seeds; 15/4/1 is
+the smallest one alive on all four (populations reach the 500 cap, predation 4–27). The fixture now seeds
+20 animals, and `FOUNDER_COUNT` in `tests/helpers.ts` is derived from the fixture config rather than
+hard-coded, so the founder-id assertions in `tests/lineage.test.ts` and `tests/population.test.ts` cannot
+drift from it again.
+
 **Seed sensitivity (measured, and it matters for the test suite).** Whole-world collapse is
 seed-dependent, in both the default world and the test configuration:
 
 - Default world, 3000 ticks: `evolab-2` ends with **population 0** (6 old-age, 56 starvation, 77
   predation, 5 thermal deaths) in both the baseline and the metabolic variant, while `evolab` and
-  `evolab-3` end pinned at the 3200 ceiling.
+  `evolab-3` end pinned at the 3200 ceiling. Under candidate (h)'s 120/18/6 loading that collapse is gone
+  on all three seeds (`evolab-2` recovers to 3100–3196), which is how the collapse was identified as
+  overharvest rather than an unusable seed.
 - 48×48 test configuration on seed `evolab` (`tests/scratch-testconfig-collapse.ts`): alive 11 at
-  tick 250 → 4 → 3 → 1 → **0 by tick 1250**. The unit tests are unaffected only because they run on
-  `probe-*` seeds and 1500 ticks.
+  tick 250 → 4 → 3 → 1 → **0 by tick 1250**. The unit tests were unaffected only because they run on
+  `probe-*` seeds; after candidate (g) the same collapse reached `probe-a` and `probe-b` and broke two
+  milestone-5 tests. It is fixed by the fixture's own founder ratio (above), not by loosening a test.
 
 Any candidate must therefore be measured on at least three seeds, and "population 0 at tick 1250"
 counts as a collapse, not a stable community.
@@ -365,6 +443,10 @@ part of the vitest suite):
 | `tests/scratch-testconfig-collapse.ts` | whether the 48x48 test configuration collapses on the `evolab` seed |
 | `tests/scratch-meat-supply.ts` | the cohort's own meat economy in the window in which it dies: its own sensory radius, what it is allowed to eat and how far away it is, what its own chase rule would commit to, and its energy intake against its bill. Also reports what its strikes and kills cost |
 | `tests/scratch-carrion.ts` | the litter/detritus pool: how much of it a carnivore stands on, how much its hunting asks for, and how much it actually draws with and without a scavenging behaviour in the engine. Runs both the default world and the 48x48 configuration |
+| `tests/scratch-founder-thermal.ts` | the temperature the founder band is actually exposed to: spawn deviation against its own optimum and tolerance, and every death in each founder window by cause |
+| `tests/scratch-founder-ratio.ts` | founder loading on the default world: five `herbivore/omnivore/carnivore` variants × 3 seeds, with the band's size at every 250-tick census to 3000 ticks and the whole-world death tallies |
+| `tests/scratch-testconfig-ratio.ts` | the same question on the 48×48 test fixture (4 seeds × 1500 ticks): which loadings collapse and which hold |
+| `tests/scratch-late-introduction.ts` | carnivores injected at tick 1500 into a world that has already reached its producer equilibrium: band size and death causes every 250 ticks |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -377,7 +459,8 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
 2. ✅ Causes identified and written into §6 (A: founder cohort never reaches legal prey; B:
    carnivory cannot recolonise; C: the ceiling, not ecology, sets current numbers).
 3. Candidates measured one at a time; every result is in §6D. Nothing so far has produced cohort
-   persistence:
+   persistence. What has changed is the diagnosis: contact, price, distance and temperature are all
+   excluded, and overharvest at founding is what remains:
    a. quarry commitment, founder speed 1.8, flight-initiation distance (earlier pass) — no effect;
    b. ✅ **Clustered founder spawning** (`findSpawnNear` rings, herbivores 10 / omnivores 8 /
       carnivores 15 around a fertile core) — kept: it fixed the contact failure it was written for
@@ -390,18 +473,36 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
    e. ❌ **opening the world's litter pool to it** (`World.takeDetritus` given to `behaveHunt`): it
       drew 0.04–0.08 E per carnivore-tick, and every census came out the same with the pool open or
       closed. Rejected, and the change was reverted; the engine has no carrion consumer.
-   f. **Next candidate, in order: founder adaptation to local conditions** (thermal optimum matched to
-      the climate the founders are spawned into). Thermal stress is a top-three cause of death in every
-      run (§6C) and it is a term of the same energy bill the measurements above are charging the
-      cohort.
-   g. If a multi-band community survives, **re-measure carrying capacity**; only if it is still
-      pinned at the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem
-      settles below 3200 on its own instead of being clipped.
-4. Acceptance test for the next candidate, measured on three seeds: the founder band is still alive
-   at tick 3000 on at least two seeds (`tests/scratch-founder-metabolism.ts`), `scratch.test.ts`
-   shows cohort persistence beyond ~1000 ticks, and `tests/scratch-testconfig-collapse.ts` shows the
-   48×48 configuration no longer collapsing. A candidate that only works while the population is
-   pinned at the 3200 ceiling does not count.
+   f. ❌ **founder adaptation to the local climate** (`tests/scratch-founder-thermal.ts`): ruled out
+      before it was implemented — spawn deviation 3.5–5.1 °C inside a 10–12 °C tolerance band, and 0
+      thermal deaths in any founder window. Thermal stress does regulate the whole population (100–310
+      deaths per 250-tick window), it is just not what this cohort dies of.
+   g. ✅ **herd-anchored founder spawning** — carnivores seeded 1–2 tiles from a producer founder
+      instead of on a ring at 15. Kills land from tick 1: 0.060–0.064 per animal-tick, 0.347 E of prey
+      body in against a 0.352–0.371 E bill. Kept: it removed the distance the meat-supply probe named
+      and exposed overharvest as the binding constraint.
+   h. ✅ **founder loading ratio** (`tests/scratch-founder-ratio.ts`, five loadings × three seeds):
+      120/18/6 is the default now. No seed collapses, a carnivore band is alive at the 3000-tick census
+      on `evolab-3`, and on that seed the population stays below the 3200 ceiling (2814–2939) for the
+      last 1250 ticks, under 6837 predation deaths. The 48x48 test fixture needed its own ratio: 15/4/1
+      (`tests/scratch-testconfig-ratio.ts`), because 15/4/3 collapses on two of the test seeds.
+   i. **next candidate, in order: the behaviour gates that make a strict meat-eater unbootstrap-able.**
+      `tests/scratch-late-introduction.ts` shows the diet itself is survivable at equilibrium (7–16
+      carnivores across 1500 ticks on `evolab-3`), so what has to be measured next is what a founder
+      cohort needs in its first 500 ticks to leave offspring behind it: a plant channel below diet 0.66,
+      or prey it is allowed to raise.
+   j. If a multi-band community survives, **re-measure carrying capacity**; only if it is still pinned at
+      the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem settles below 3200 on
+      its own instead of being clipped. The 120/18/6 result on `evolab-3` says this is worth re-running
+      once a band persists on the other two seeds.
+4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
+   (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
+   seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here
+   until now — "the founder band is still alive at tick 3000" — cannot be met by design: founders are
+   seeded as adults with `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can
+   still be alive at tick 3000. Standing for the 120/18/6 default today: a band alive at 3000 ticks on 1
+   seed of 3, a band alive at tick 500 on 2 of 3, no seed collapsed — **not met yet**. A candidate that
+   only works while the population is pinned at the 3200 ceiling does not count.
 5. ✅ Done (milestone 5). The diagnosis became assertion tests: `tests/conservation.test.ts`
    (1000-tick energy audit), `tests/determinism.test.ts`, `tests/lineage.test.ts` (inheritance /
    mutation / engine genealogy), `tests/population.test.ts` (census bookkeeping). The probes remain

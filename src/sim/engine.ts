@@ -247,19 +247,22 @@ export class Simulation {
     for (const field of CHART_FIELDS) this.series.set(field, new SeriesBuffer())
 
     this.world.generate(config.world)
-    // Founder rings around one fertile core. Producers settle the core; the
-    // predator band settles in a wider ring around them. Seeding everything in
-    // one neighbourhood lets the few founder carnivores eat the founder herd
-    // before it ever reproduces; the outer ring lets the producers start their
-    // growth phase first, while keeping the herd close enough that the
-    // carnivores find it within their first hunger cycle — a founder wave that
-    // reaches its prey just after the prey has established.
+    // Founder rings around one fertile core. Producers settle the core; each
+    // carnivore is seeded inside the producer herd instead of on a wider ring.
+    // The measurements (PROGRESS.md §6D) found the binding constraint at t = 0
+    // was distance, not price: a founder band starved with its nearest legal
+    // quarry 6.6–8.7 tiles away — beyond the distance its own pursuit rule
+    // would ever start a hunt for. Seeding each hunter within a stride of a
+    // producer removes exactly that distance: the strike gate (speed + 0.6)
+    // covers the spawn gap, so the founder herd is huntable from the first
+    // hunger cycle and the producers still establish on the core first.
     const core = this.world.findSpawn(this.rng)
     const founderRing: Record<'herbivore' | 'omnivore' | 'carnivore', number> = {
       herbivore: 10,
       omnivore: 8,
-      carnivore: 15
+      carnivore: 2
     }
+    const herdTiles: number[] = []
     for (const diet of DIET_CLASSES) {
       const founder = founderGenome(this.rng, diet, 0)
       founder[TRAIT_INDEX.hue] = diet === 'herbivore' ? 120 : diet === 'carnivore' ? 10 : 45
@@ -267,8 +270,14 @@ export class Simulation {
       const count = config.population.founders[diet] ?? 0
       const radius = founderRing[diet]
       for (let i = 0; i < count; i++) {
-        const tile = this.world.findSpawnNear(this.rng, core, radius)
+        // Carnivores settle next to an existing producer founder; producers
+        // settle around the core and become the herd the hunters feed on.
+        const anchor = diet === 'carnivore' && herdTiles.length > 0
+          ? herdTiles[this.rng.int(herdTiles.length)]
+          : core
+        const tile = this.world.findSpawnNear(this.rng, anchor, radius)
         this.spawnFounder(founderGenome(this.rng, diet), record.id, tile)
+        if (diet !== 'carnivore') herdTiles.push(tile)
       }
     }
 

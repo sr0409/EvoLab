@@ -10,7 +10,7 @@ import {
   TRAIT_MAX,
   TRAIT_MIN
 } from '../src/sim/traits'
-import { runSim, testConfig } from './helpers'
+import { FOUNDER_COUNT, runSim, testConfig } from './helpers'
 
 /**
  * Inheritance, mutation and genealogy (milestone 5, item 4).
@@ -157,7 +157,7 @@ describe('engine genealogy', () => {
   const sim = runSim('lineage-engine', 300)
 
   it('registers every creature it ever created, founders first', () => {
-    expect(sim.nextId).toBeGreaterThan(22) // real births happened
+    expect(sim.nextId).toBeGreaterThan(FOUNDER_COUNT) // real births happened
     expect(sim.lineage.count).toBe(sim.nextId)
   })
 
@@ -165,7 +165,7 @@ describe('engine genealogy', () => {
     for (let id = 0; id < sim.lineage.count; id++) {
       expect(sim.lineage.has(id)).toBe(true)
       const [a, b] = sim.lineage.parentsOf(id)
-      if (id < 22) {
+      if (id < FOUNDER_COUNT) {
         expect(a).toBe(-1)
         expect(b).toBe(-1)
       } else {
@@ -178,7 +178,7 @@ describe('engine genealogy', () => {
   })
 
   it('the genealogy is acyclic: parents are always born before their children', () => {
-    for (let id = 22; id < sim.lineage.count; id++) {
+    for (let id = FOUNDER_COUNT; id < sim.lineage.count; id++) {
       const [a, b] = sim.lineage.parentsOf(id)
       expect(a).toBeLessThan(id)
       expect(b).toBeLessThan(id)
