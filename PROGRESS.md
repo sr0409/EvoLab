@@ -287,7 +287,10 @@ Conclusion: a stable population of a few thousand is **not** what this environme
 own at default primary productivity — it is what the ceiling imposes. The guardrail was tightened
 to match the design: `normalizeConfig` clamps `maxCreatures` to 4000. The right fix is to make
 ecology the regulator, top-down: keep predators alive (A/B) first, re-measure, and only then, if
-K still sits at the ceiling, lower primary productivity rather than raise the ceiling.
+K still sits at the ceiling, lower primary productivity rather than raise the ceiling. Candidate (k)
+has since measured exactly that prescription, and it came back inverted: with the cap held, lowering
+primary productivity either left the population pinned at the cap or broke the founding community —
+it produced no stable community under the cap (§6D candidate k).
 
 **D. Candidate records for this loop (measured).** Each candidate below was measured with the probes
 in §7 on the default world (168×112), seeds `evolab`, `evolab-2`, `evolab-3`, 3000 ticks, census
@@ -304,6 +307,7 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | **Candidate (h): founder loading ratio** — `config.population.founders` only, no behavioural change (`tests/scratch-founder-ratio.ts`: 5 variants × 3 seeds × 3000 ticks) | 60/18/12 (the old default): seed `evolab-2` ends at **population 0**. 60/18/6: `evolab-2` ends at 0. 120/18/12: no collapse, band gone by tick 500. **120/18/6**: no collapse on any seed, a band present at ticks 250–500 on two seeds and **alive at the 3000-tick census on `evolab-3`**, predation 172/165/6837 per run, and on that seed the population sits **below the ceiling** (2814–2939) for the final 1250 ticks. 60/18/4: no collapse on any seed, `evolab-2` recovers to 3100, but the band reaches 3000 on one seed only and predation is lower (55–801) | **Kept, and it is the new default: 120/18/6** (`config.ts`). The first configuration in which predation, not the cap, moves the population |
 | **Candidate (i): carnivores introduced into an established world** (`tests/scratch-late-introduction.ts`: 12 founders injected at tick 1500, nothing else changed) | `evolab-3`: **7–16 carnivores at every census for the whole 1500-tick observation.** `evolab-2`: overshoots to 36 then crashes to 0. `evolab`: dead within ~500 ticks — that equilibrium is crowded and its adults are thin (`preyIsLegal` requires prey energy > 0.2) | **Measured, no engine change kept.** Strict carnivory *is* supported at equilibrium where well-fed adult prey exist; what fails is the cold start, not the diet |
 | **Candidate (j): recruitment-quota predation on juvenile prey** — `preyIsLegal` exception: an animal below its own `maturityAge` is legal quarry only while its own species is growing, the allowance (`quarryQuota`, recomputed at every census from the growth that census recorded, capped at one kill per animal the species already has) being the growth itself. Implemented in `engine.ts`, measured A/B on identical seeds with `tests/scratch-carnivore-quota.ts` | The rule engages and it changes what is eaten: juvenile kills **49 / 10 / 747** where the standing rule records **0 / 0 / 0**, adult kills fall **338 → 168, 161 → 157, 6837 → 3793**. On `evolab-3` it produces the largest mid-run band this project has measured — **26–28 animals at ticks 750–1250** — and then loses it: **0 from tick 2000**. Strict band at the 3000-tick census: **0 / 0 / 0**, against **0 / 0 / 11** with the rule off on the same seeds. No seed collapses (3196 / 3192 / 3198), and mature prey are plentiful throughout (≈2900) | **Rejected; the engine change is reverted.** It is the first candidate that made a carnivore band *bigger*, and that is what makes it informative: the band was never short of food or of quarry, it over-shoots, the population sits back on the 3200 ceiling from tick 1750, and the band is gone 250 ticks later. The one configuration that reaches 3000 under the standing rule is the one where the population stays **under** the cap — which is the reading candidate (h) already gave, and it points at §8 step 3.j, not at another behavioural gate |
+| **Candidate (k): lower primary productivity, cap held fixed** — `environment.sunlight` ladder 1.00 → 0.85 → 0.70 → 0.55 plus a famine-level preset (0.42 sunlight / 0.62 rainfall), `maxCreatures` unchanged at 3200 (`tests/scratch-productivity-ladder.ts`: 5 rungs × seeds `evolab`, `evolab-2`, `evolab-3` × 3000 ticks, no engine change) | The baseline rung reproduces candidate (h) exactly — band 11 at the 3000-tick census on `evolab-3`, 0 on the other two seeds — the probe measures the same engine. The lowered rungs do **not** move the population off the ceiling: every seed that survives peaks at 3189–3201 and sits capped for 6–9 of its 9 post-bootstrap censuses. What lowering productivity changes is the bootstrap, not the ceiling: `evolab-2` dies out entirely at rungs 0.70 and 0.55 (peaks 0 and 5), while `evolab` and `evolab-3` still reach the cap. The band is the first casualty: **0/3 seeds carry a strict band at 3000 on any lowered rung** — at sun 0.85 the `evolab-3` band that survives at default productivity is gone by tick 750. The only rung that never touches the cap is the famine preset (no capped census on any seed), and it is a broken world: `evolab` and `evolab-2` end at population 0, `evolab-3` crawls 55 → 2105 over 3000 ticks with **zero strict animals at every census** | **Rejected, no engine or config change.** A sub-cap community and a surviving band are anti-correlated in this engine: every configuration that can carry a band fills the cap, and the only configuration that stays under it cannot bootstrap a founding community at all |
 
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
@@ -372,20 +376,36 @@ already adding to exactly that bill, and thermal stress is a top-three cause of 
   the one where the population sits **under** the cap — which is candidate (h)'s reading again, and it points at
   the ceiling and primary productivity (§8 step 3.k), not at another behavioural gate.
 
-- **(j) is the one candidate that made a carnivore band bigger, and it still failed.** `preyIsLegal` was the
-  last gate that could plausibly starve a founding cohort: an animal below `maturityAge` was never quarry, no
-  matter what the hunter could afford. Candidate (j) makes young animals legal exactly while their own species is
-  growing — the allowance (`quarryQuota`) recomputed at every census from the growth that census actually
-  recorded, capped at one kill per animal that species already has, so a declining population gets a quota of
-  zero and the old rule back. Measured against itself, same seeds, same worlds: juvenile kills **49 / 10 / 747**
-  where the standing rule records none, adult kills down **338 → 168, 161 → 157, 6837 → 3793**, and on
-  `evolab-3` a band of **26–28 animals at ticks 750–1250** — the largest mid-run band measured in this project —
-  collapsing to **0 from tick 2000** and ending **0 / 0 / 0** at 3000 ticks, against 0 / 0 / 11 with the rule
-  off. No seed collapsed, and about 2900 mature prey were available throughout. **Reverted.** The band was never
-  short of food or of quarry: it over-shoots, the population returns to the 3200 ceiling, and the band dies in
-  the crowd. The one run in which a band reaches 3000 under the standing rule is the one where the population
-  sits **under** the cap — which is the reading candidate (h) already gave, and it points at the ceiling and at
-  primary productivity (§8 step 3.j′), not at another behavioural gate.
+- **(k) tested the crowding explanation directly, and closed the ordered candidate list with a negative
+  result.** The reading of (h) and (j) was the same: the band dies when the population sits at the 3200
+  ceiling. So candidate (k) held the ceiling fixed at 3200 and turned down the two dials plant growth
+  actually reads — `environment.sunlight` rungs 0.85 / 0.70 / 0.55, plus a `famine`-level preset at 0.42
+  sunlight / 0.62 rainfall — on all three seeds, 3000 ticks (`tests/scratch-productivity-ladder.ts`; peak
+  population, censuses at ≥ 99% of the cap from tick 1000 onward, band count at every census; no engine
+  change).
+  - **The baseline rung reproduces (h) exactly** — band 11 at the 3000-tick census on `evolab-3`, 0 on the
+    other two seeds, populations 3190–3201. The probe is measuring the same engine.
+  - **Lowering productivity does not move K off the ceiling.** At 0.85, 0.70 and 0.55 every seed that
+    survives still peaks at 3198–3201 and sits capped for 6–9 of its 9 post-bootstrap censuses, exactly like
+    the baseline; at rung 0.55 `evolab` merely takes until tick 1500 to reach it, and sits on it after that.
+  - **What lowering productivity changes is the bootstrap, not the ceiling.** `evolab-2`'s founders never
+    establish at 0.70 and 0.55 (peaks 0 and 5): a thinner grass base no longer survives the founding stage
+    at 120/18/6.
+  - **The band is the first thing lowered productivity removes.** At 0.85 the `evolab-3` band that reaches
+    3000 at default productivity is gone by tick 750. At 0.70 and 0.55 a band shows up only as 1–3 animals
+    at the earliest censuses and is 0 everywhere by tick 1000. Every lowered rung ends **0/3 seeds with a
+    band at 3000**.
+  - **The only configuration that stays under the cap is a broken world.** The famine preset never touches
+    the cap on any seed (0 capped censuses) — and `evolab` and `evolab-2` end at population 0, while
+    `evolab-3` crawls 55 → 2105 across 3000 ticks with **zero strict animals at every census**.
+
+  **Conclusion: rejected; no engine or config change.** In this engine a community settled under the ceiling
+  and a community carrying a carnivore band are anti-correlated: every configuration robust enough to carry a
+  band fills the cap, and the only rung that stays under it cannot bootstrap founders at all. The barrier
+  remains exactly where (h) and (j) left it — §6B: no plant channel for a strict diet, and no offspring line
+  surviving the founding overharvest. **With (k) the ordered candidate list this plan defines is exhausted**;
+  the only configuration that meets the acceptance bar anywhere is the default 120/18/6, and it meets it on
+  1 seed of 3. Continuing is no longer a measurement question: it requires a new class of mechanism (§8).
 
 **The acceptance bar, restated.** §8 step 4 used to ask for "the founder band still alive at tick 3000".
 Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
@@ -477,6 +497,10 @@ part of the vitest suite):
 | `tests/scratch-founder-ratio.ts` | founder loading on the default world: five `herbivore/omnivore/carnivore` variants × 3 seeds, with the band's size at every 250-tick census to 3000 ticks and the whole-world death tallies |
 | `tests/scratch-testconfig-ratio.ts` | the same question on the 48×48 test fixture (4 seeds × 1500 ticks): which loadings collapse and which hold |
 | `tests/scratch-late-introduction.ts` | carnivores injected at tick 1500 into a world that has already reached its producer equilibrium: band size and death causes every 250 ticks |
+| `tests/scratch-carnivore-band.ts` | where the carnivore band goes under the committed default: the strict band (inherited diet > 0.66) separated from the whole carnivore band, census counts per window, and every animal's exit attributed to the cause the engine itself recorded — dying and diet drift out of the band are kept apart |
+| `tests/scratch-carnivore-collapse.ts` | individual-by-individual accounting of the recruited cohort behind the band's 1-of-3-seed survival at tick 3000: every animal's exit attributed from its last observed state |
+| `tests/scratch-carnivore-quota.ts` | the candidate (j) A/B measurement: every seed run twice, once with the recruitment-quota exception live in `preyIsLegal` and once switched off at runtime, same config, same world |
+| `tests/scratch-productivity-ladder.ts` | the candidate (k) measurement: `environment.sunlight` rungs 1.00 → 0.85 → 0.70 → 0.55 plus a famine preset (0.42 sunlight / 0.62 rainfall) with `maxCreatures` held at 3200, asked as the acceptance test itself on three seeds × 3000 ticks |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -525,16 +549,19 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       collapses to 0 from tick 2000 and ends the run at 0 / 0 / 0 where the standing rule leaves 11. The
       plant-channel half of the same question (a plant fallback for diet ≥ 0.7) was measured in an earlier
       pass and rejected the same way. (§6D candidate j.)
-   j. **Next candidate, in order: primary productivity.** Candidates (i) and (j) close the behavioural-gates
-      question: a strict band is survivable at equilibrium, and it can be fed into existence on demand. What
-      no measurement has changed is what happens when the population returns to the 3200 ceiling — that is
-      when the band disappears (§6C, §6D candidates h and j). So take the measurement §6C named: lower
-      primary productivity (`config.ts`: rainfall / solar / soil fertility) so the world settles **below**
-      3200 on its own instead of being clipped there, then re-measure the strict band on three seeds.
-   k. If a multi-band community survives, **re-measure carrying capacity**; only if it is still pinned at
-      the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem settles below 3200 on
-      its own instead of being clipped. The 120/18/6 result on `evolab-3` says this is worth re-running
-      once a band persists on the other two seeds.
+   j. **Lower primary productivity so the population lives under the cap** — implemented and measured,
+      **rejected**. Implemented as a rung ladder in `config.ts`'s `environment` rungs lowering sunlight
+      1.00 → 0.85 → 0.70 → 0.55 plus a famine preset at 0.42 sunlight / 0.62 rainfall, with
+      `maxCreatures` pinned at 3200; the measurement asks the acceptance test itself on three seeds
+      (`tests/scratch-productivity-ladder.ts`, 3000 ticks, no engine change). Every lowered rung either
+      keeps the population pinned at 3200 through tick 3000 or collapses the founding community to 0; no
+      lowered rung produced a population living under the cap or kept a strict cohort past tick 3000
+      anywhere, and the only settings that never pinned at 3200 were ones that could not found a
+      community at all. The full record is in §6D candidate (k) and §6E. **This item closes the ordered
+      candidate ladder: a–i closed the behavioural-gates question one by one, and this item closes the
+      crowding explanation §6C named. What remains is not another knob to measure but a design change**
+      — the concrete next candidate is the prey-size asymmetry of §6B, a refuge predation cannot open,
+      which is a new class of mechanism, not another rung on the same ladder.
 4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
    (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
    seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here

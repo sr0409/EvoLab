@@ -86,7 +86,6 @@ function run(seed: string): void {
     if (sim.tick % WINDOW !== 0) continue
 
     const live = sim.creatures as unknown as Organism[]
-    const band = live.filter(isStrict)
     const held = live
       .filter((c) => isStrict(c) && c.alive)
       .map((c) => c.energy)
