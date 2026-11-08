@@ -303,6 +303,7 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | **Candidate (g): herd-anchored founder spawning** — carnivores spawn 1–2 tiles from a producer founder instead of on a ring at radius 15 (`engine.ts` ~250–283) | First contact is real from tick 1: **0.060–0.064 successful kills per animal-tick**, **0.347 E gross prey-body intake per animal-tick** against a 0.352–0.371 E bill (`tests/scratch-meat-supply.ts` re-run). The founder band still dies within the first window on 2 of 3 seeds, and survives to tick 500 on one | **Kept.** It removed the distance failure candidate (d) named, and moved the binding constraint from *contact* to *overharvest* — which is what candidate (h) then measured |
 | **Candidate (h): founder loading ratio** — `config.population.founders` only, no behavioural change (`tests/scratch-founder-ratio.ts`: 5 variants × 3 seeds × 3000 ticks) | 60/18/12 (the old default): seed `evolab-2` ends at **population 0**. 60/18/6: `evolab-2` ends at 0. 120/18/12: no collapse, band gone by tick 500. **120/18/6**: no collapse on any seed, a band present at ticks 250–500 on two seeds and **alive at the 3000-tick census on `evolab-3`**, predation 172/165/6837 per run, and on that seed the population sits **below the ceiling** (2814–2939) for the final 1250 ticks. 60/18/4: no collapse on any seed, `evolab-2` recovers to 3100, but the band reaches 3000 on one seed only and predation is lower (55–801) | **Kept, and it is the new default: 120/18/6** (`config.ts`). The first configuration in which predation, not the cap, moves the population |
 | **Candidate (i): carnivores introduced into an established world** (`tests/scratch-late-introduction.ts`: 12 founders injected at tick 1500, nothing else changed) | `evolab-3`: **7–16 carnivores at every census for the whole 1500-tick observation.** `evolab-2`: overshoots to 36 then crashes to 0. `evolab`: dead within ~500 ticks — that equilibrium is crowded and its adults are thin (`preyIsLegal` requires prey energy > 0.2) | **Measured, no engine change kept.** Strict carnivory *is* supported at equilibrium where well-fed adult prey exist; what fails is the cold start, not the diet |
+| **Candidate (j): recruitment-quota predation on juvenile prey** — `preyIsLegal` exception: an animal below its own `maturityAge` is legal quarry only while its own species is growing, the allowance (`quarryQuota`, recomputed at every census from the growth that census recorded, capped at one kill per animal the species already has) being the growth itself. Implemented in `engine.ts`, measured A/B on identical seeds with `tests/scratch-carnivore-quota.ts` | The rule engages and it changes what is eaten: juvenile kills **49 / 10 / 747** where the standing rule records **0 / 0 / 0**, adult kills fall **338 → 168, 161 → 157, 6837 → 3793**. On `evolab-3` it produces the largest mid-run band this project has measured — **26–28 animals at ticks 750–1250** — and then loses it: **0 from tick 2000**. Strict band at the 3000-tick census: **0 / 0 / 0**, against **0 / 0 / 11** with the rule off on the same seeds. No seed collapses (3196 / 3192 / 3198), and mature prey are plentiful throughout (≈2900) | **Rejected; the engine change is reverted.** It is the first candidate that made a carnivore band *bigger*, and that is what makes it informative: the band was never short of food or of quarry, it over-shoots, the population sits back on the 3200 ceiling from tick 1750, and the band is gone 250 ticks later. The one configuration that reaches 3000 under the standing rule is the one where the population stays **under** the cap — which is the reading candidate (h) already gave, and it points at §8 step 3.j, not at another behavioural gate |
 
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
@@ -328,8 +329,8 @@ only distance the engine can honestly change at t = 0 is the founders' own reach
 the next measurement because the founders' thermal optimum (20–22 °C against a 26 °C baseline climate) is
 already adding to exactly that bill, and thermal stress is a top-three cause of death in §6C.
 
-**Candidates (f)–(i), the pass that followed it.** Four measurements, in the order they were taken; only
-(g) and (h) changed the code.
+**Candidates (f)–(j), the pass that followed it.** Six measurements, in the order they were taken;
+(g) and (h) changed the engine and stayed, (j) changed it and was reverted.
 
 - **(f) was ruled out before it was implemented.** The founders are not thermally exposed: spawned into a
   26 °C world with a 20–22 °C optimum and an 10–12 °C tolerance window, their spawn deviation is 3.5–5.1 °C
@@ -356,6 +357,35 @@ already adding to exactly that bill, and thermal stress is a top-three cause of 
   observation on `evolab-3`, an overshoot-and-crash on `evolab-2` (36 → 0), and a fast death on `evolab`,
   whose equilibrium is crowded and whose adults carry too little energy to be legal quarry. Carnivory is
   survivable at equilibrium; bootstrapping it is what fails.
+- **(j) is the one candidate that made a carnivore band bigger, and it still failed.** `preyIsLegal` was the
+  last gate that could plausibly starve a founding cohort: an animal below `maturityAge` was never quarry, no
+  matter what the hunter could afford. Candidate (j) makes young animals legal exactly while their own species is
+  growing — the allowance (`quarryQuota`) recomputed at every census from the growth that census actually
+  recorded, capped at one kill per animal that species already has — so a declining population gets a quota of
+  zero and the original rule back. Measured against itself, same seeds, same worlds: juvenile kills
+  **49 / 10 / 747** where the standing rule records **0**, adult kills down **338 → 168, 161 → 157,
+  6837 → 3793**, and on `evolab-3` a band of **26–28 animals at ticks 750–1250** — the largest mid-run band
+  measured in this project — collapsing to **0 from tick 2000** and ending **0 / 0 / 0** at 3000 ticks against
+  **0 / 0 / 11** with the rule off. No seed collapsed, and ~2900 mature prey were available throughout.
+  Reverted. The band was never short of food or of quarry: it over-shoots, the population returns to the 3200
+  ceiling, and the band dies in the crowd. The one run in which a band reaches 3000 under the standing rule is
+  the one where the population sits **under** the cap — which is candidate (h)'s reading again, and it points at
+  the ceiling and primary productivity (§8 step 3.k), not at another behavioural gate.
+
+- **(j) is the one candidate that made a carnivore band bigger, and it still failed.** `preyIsLegal` was the
+  last gate that could plausibly starve a founding cohort: an animal below `maturityAge` was never quarry, no
+  matter what the hunter could afford. Candidate (j) makes young animals legal exactly while their own species is
+  growing — the allowance (`quarryQuota`) recomputed at every census from the growth that census actually
+  recorded, capped at one kill per animal that species already has, so a declining population gets a quota of
+  zero and the old rule back. Measured against itself, same seeds, same worlds: juvenile kills **49 / 10 / 747**
+  where the standing rule records none, adult kills down **338 → 168, 161 → 157, 6837 → 3793**, and on
+  `evolab-3` a band of **26–28 animals at ticks 750–1250** — the largest mid-run band measured in this project —
+  collapsing to **0 from tick 2000** and ending **0 / 0 / 0** at 3000 ticks, against 0 / 0 / 11 with the rule
+  off. No seed collapsed, and about 2900 mature prey were available throughout. **Reverted.** The band was never
+  short of food or of quarry: it over-shoots, the population returns to the 3200 ceiling, and the band dies in
+  the crowd. The one run in which a band reaches 3000 under the standing rule is the one where the population
+  sits **under** the cap — which is the reading candidate (h) already gave, and it points at the ceiling and at
+  primary productivity (§8 step 3.j′), not at another behavioural gate.
 
 **The acceptance bar, restated.** §8 step 4 used to ask for "the founder band still alive at tick 3000".
 Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
@@ -486,12 +516,22 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       on `evolab-3`, and on that seed the population stays below the 3200 ceiling (2814–2939) for the
       last 1250 ticks, under 6837 predation deaths. The 48x48 test fixture needed its own ratio: 15/4/1
       (`tests/scratch-testconfig-ratio.ts`), because 15/4/3 collapses on two of the test seeds.
-   i. **next candidate, in order: the behaviour gates that make a strict meat-eater unbootstrap-able.**
-      `tests/scratch-late-introduction.ts` shows the diet itself is survivable at equilibrium (7–16
-      carnivores across 1500 ticks on `evolab-3`), so what has to be measured next is what a founder
-      cohort needs in its first 500 ticks to leave offspring behind it: a plant channel below diet 0.66,
-      or prey it is allowed to raise.
-   j. If a multi-band community survives, **re-measure carrying capacity**; only if it is still pinned at
+   i. ❌ **a strict meat-eater allowed to take young prey while its prey population is growing** — the
+      recruitment quota (`quarryQuota` in `preyIsLegal`, the allowance recomputed at every census from the
+      growth that census recorded, capped at one kill per animal the species already has), implemented and
+      measured A/B on identical seeds with `tests/scratch-carnivore-quota.ts`, and **reverted**. It engages:
+      49 / 10 / 747 juvenile kills against 0, adult kills down 338 → 168, 161 → 157, 6837 → 3793, and the
+      largest mid-run band measured in this project (26–28 on `evolab-3`, ticks 750–1250) — which then
+      collapses to 0 from tick 2000 and ends the run at 0 / 0 / 0 where the standing rule leaves 11. The
+      plant-channel half of the same question (a plant fallback for diet ≥ 0.7) was measured in an earlier
+      pass and rejected the same way. (§6D candidate j.)
+   j. **Next candidate, in order: primary productivity.** Candidates (i) and (j) close the behavioural-gates
+      question: a strict band is survivable at equilibrium, and it can be fed into existence on demand. What
+      no measurement has changed is what happens when the population returns to the 3200 ceiling — that is
+      when the band disappears (§6C, §6D candidates h and j). So take the measurement §6C named: lower
+      primary productivity (`config.ts`: rainfall / solar / soil fertility) so the world settles **below**
+      3200 on its own instead of being clipped there, then re-measure the strict band on three seeds.
+   k. If a multi-band community survives, **re-measure carrying capacity**; only if it is still pinned at
       the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem settles below 3200 on
       its own instead of being clipped. The 120/18/6 result on `evolab-3` says this is worth re-running
       once a band persists on the other two seeds.
