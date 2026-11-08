@@ -308,6 +308,7 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | **Candidate (i): carnivores introduced into an established world** (`tests/scratch-late-introduction.ts`: 12 founders injected at tick 1500, nothing else changed) | `evolab-3`: **7–16 carnivores at every census for the whole 1500-tick observation.** `evolab-2`: overshoots to 36 then crashes to 0. `evolab`: dead within ~500 ticks — that equilibrium is crowded and its adults are thin (`preyIsLegal` requires prey energy > 0.2) | **Measured, no engine change kept.** Strict carnivory *is* supported at equilibrium where well-fed adult prey exist; what fails is the cold start, not the diet |
 | **Candidate (j): recruitment-quota predation on juvenile prey** — `preyIsLegal` exception: an animal below its own `maturityAge` is legal quarry only while its own species is growing, the allowance (`quarryQuota`, recomputed at every census from the growth that census recorded, capped at one kill per animal the species already has) being the growth itself. Implemented in `engine.ts`, measured A/B on identical seeds with `tests/scratch-carnivore-quota.ts` | The rule engages and it changes what is eaten: juvenile kills **49 / 10 / 747** where the standing rule records **0 / 0 / 0**, adult kills fall **338 → 168, 161 → 157, 6837 → 3793**. On `evolab-3` it produces the largest mid-run band this project has measured — **26–28 animals at ticks 750–1250** — and then loses it: **0 from tick 2000**. Strict band at the 3000-tick census: **0 / 0 / 0**, against **0 / 0 / 11** with the rule off on the same seeds. No seed collapses (3196 / 3192 / 3198), and mature prey are plentiful throughout (≈2900) | **Rejected; the engine change is reverted.** It is the first candidate that made a carnivore band *bigger*, and that is what makes it informative: the band was never short of food or of quarry, it over-shoots, the population sits back on the 3200 ceiling from tick 1750, and the band is gone 250 ticks later. The one configuration that reaches 3000 under the standing rule is the one where the population stays **under** the cap — which is the reading candidate (h) already gave, and it points at §8 step 3.j, not at another behavioural gate |
 | **Candidate (k): lower primary productivity, cap held fixed** — `environment.sunlight` ladder 1.00 → 0.85 → 0.70 → 0.55 plus a famine-level preset (0.42 sunlight / 0.62 rainfall), `maxCreatures` unchanged at 3200 (`tests/scratch-productivity-ladder.ts`: 5 rungs × seeds `evolab`, `evolab-2`, `evolab-3` × 3000 ticks, no engine change) | The baseline rung reproduces candidate (h) exactly — band 11 at the 3000-tick census on `evolab-3`, 0 on the other two seeds — the probe measures the same engine. The lowered rungs do **not** move the population off the ceiling: every seed that survives peaks at 3189–3201 and sits capped for 6–9 of its 9 post-bootstrap censuses. What lowering productivity changes is the bootstrap, not the ceiling: `evolab-2` dies out entirely at rungs 0.70 and 0.55 (peaks 0 and 5), while `evolab` and `evolab-3` still reach the cap. The band is the first casualty: **0/3 seeds carry a strict band at 3000 on any lowered rung** — at sun 0.85 the `evolab-3` band that survives at default productivity is gone by tick 750. The only rung that never touches the cap is the famine preset (no capped census on any seed), and it is a broken world: `evolab` and `evolab-2` end at population 0, `evolab-3` crawls 55 → 2105 over 3000 ticks with **zero strict animals at every census** | **Rejected, no engine or config change.** A sub-cap community and a surviving band are anti-correlated in this engine: every configuration that can carry a band fills the cap, and the only configuration that stays under it cannot bootstrap a founding community at all |
+| **Candidate (l): pack hunting — a pack widens its own prey-mass window** — a strict carnivore (`diet > 0.66`) with mature conspecifics in sight hunts as a pack: a new `packHuntBonus` counts up to 3 mature same-species bandmates inside its own senses and scales the `preyIsLegal` mass window by `1 + 0.35 × sociality × packmates`, `sociality` being the engine's existing heritable social trait (founder carnivores 0.35); a solitary or unsocial hunter keeps exactly the solo rule. Implemented in `engine.ts` (`preyIsLegal` / `pickQuarry`), measured A/B on identical seeds with `tests/scratch-pack-hunt.ts`, the pack arm patching the rule onto the committed engine at runtime | The rule fires on every seed — max window factor **1.52 / 1.69 / 1.66** — and opens nothing: quarry picks on prey above the solo window **0 / 0 / 1** across the six runs, kills on prey above the solo window **0 / 0 / 0**. §6B's "too big to be prey: 0" was not predation failing a size test; it is the true state of these faunas — the engine never declines a prey for size, because it never meets one outside its own window. Band at the 3000-tick census: **0 / 0 / 7** against **0 / 0 / 11** with the rule off on the same seeds: the `evolab` and `evolab-2` runs are identical, and the one seed where a band reaches 3000 ends with a smaller band (11 → 7, population 3198 → 3191, predation 6837 → 6829) | **Rejected; the engine change was reverted.** A pack changes what predation may eat, and in these worlds nothing is declined for size, so there is nothing for it to unlock. That closes §6B's size asymmetry as a lever. The binding constraint stays where (h) left it — the founder cohort's energy flow and the recruitment gap (no plant channel for a strict diet, offspring not surviving the founding overharvest) — not which prey is legal quarry |
 
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
@@ -407,6 +408,24 @@ already adding to exactly that bill, and thermal stress is a top-three cause of 
   the only configuration that meets the acceptance bar anywhere is the default 120/18/6, and it meets it on
   1 seed of 3. Continuing is no longer a measurement question: it requires a new class of mechanism (§8).
 
+- **(l) tested that new class — pack hunting — and it ruled out the size gate itself.**
+  §6B's size refuge is the barrier no single predator can open: prey only has to stay above
+  `hunter.mass × (0.35 + 1.7 × diet)` and predation cannot take it at all. Candidate (l) implemented
+  the natural countermeasure — a strict carnivore (`diet > 0.66`) with mature same-species bandmates
+  in sight scales that window by `1 + 0.35 × sociality × packmates`, up to 3 counted, scaling on the
+  engine's existing heritable `sociality` trait so a lineage can evolve into pack hunting rather than
+  being handed it. Measured A/B on identical seeds, the candidate patched onto the committed engine at
+  runtime (`tests/scratch-pack-hunt.ts`): the rule fires on every seed — max factor **1.52 / 1.69 /
+  1.66** — and opens nothing. Across all six runs: **1** quarry pick on prey above the solo window,
+  **0** kills above it. The band at 3000 ticks comes out **0 / 0 / 7** where the solo rule leaves
+  **0 / 0 / 11** — two seeds bit-identical, and the one seed carrying a band ends it smaller
+  (population 3198 → 3191, predation 6837 → 6829). **Rejected; the engine change was reverted.** The
+  finding is about §6B's gate, not about packs: "too big to be prey: 0" was never predation failing a
+  size test — it is the true state of these faunas, in which every animal an engine predator meets
+  already fits its own solo window. There is no size refuge to unlock, so no mechanism whose effect
+  is to widen the window can move the band. The binding constraint stays where (h) and (j) left it —
+  the founder cohort's own energy flow and the recruitment gap (§6B gate 1).
+
 **The acceptance bar, restated.** §8 step 4 used to ask for "the founder band still alive at tick 3000".
 Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
 `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can be alive at tick 3000, and
@@ -501,6 +520,7 @@ part of the vitest suite):
 | `tests/scratch-carnivore-collapse.ts` | individual-by-individual accounting of the recruited cohort behind the band's 1-of-3-seed survival at tick 3000: every animal's exit attributed from its last observed state |
 | `tests/scratch-carnivore-quota.ts` | the candidate (j) A/B measurement: every seed run twice, once with the recruitment-quota exception live in `preyIsLegal` and once switched off at runtime, same config, same world |
 | `tests/scratch-productivity-ladder.ts` | the candidate (k) measurement: `environment.sunlight` rungs 1.00 → 0.85 → 0.70 → 0.55 plus a famine preset (0.42 sunlight / 0.62 rainfall) with `maxCreatures` held at 3200, asked as the acceptance test itself on three seeds × 3000 ticks |
+| `tests/scratch-pack-hunt.ts` | the candidate (l) A/B measurement: the pack mass-window rule switched on and off on identical seeds, the candidate patched onto the committed engine at runtime; counts the strongest window factor the rule computed, the quarry picks and kills it made possible above the solo window, and band size at every census |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -562,6 +582,17 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       crowding explanation §6C named. What remains is not another knob to measure but a design change**
       — the concrete next candidate is the prey-size asymmetry of §6B, a refuge predation cannot open,
       which is a new class of mechanism, not another rung on the same ladder.
+   k. ❌ **pack hunting — a pack widens its own prey-mass window** — the new mechanism class named
+      above, implemented in `engine.ts` (a `packHuntBonus` scaling the `preyIsLegal` mass window by
+      `+ 0.35 × sociality` per mature same-species bandmate, max 3, tied to the existing heritable
+      sociality trait) and measured A/B on identical seeds with `tests/scratch-pack-hunt.ts`.
+      **Rejected; the change was reverted.** It fires on every seed (max factor 1.52 / 1.69 / 1.66)
+      and opens nothing: 1 quarry pick and 0 kills on prey above the solo window across three seeds,
+      band 0 / 0 / 7 against 0 / 0 / 11 with the rule off. §6B's size gate does not bite in these
+      worlds — no animal is ever declined for size, because none is ever outside its hunter's own
+      window — so a mechanism whose only effect is to widen the legal-prey window cannot move the
+      band. What the acceptance test still needs must act on the constraint that does bind: the
+      founder cohort's energy flow and the recruitment gap (§6B gate 1). (§6D candidate l, §6E.)
 4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
    (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
    seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here
