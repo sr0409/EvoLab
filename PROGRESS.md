@@ -274,12 +274,32 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 |---|---|---|
 | Clustered founder spawning (rings 10/8/15 around a fertile core, `engine.ts` ~258) | Founder bands now see legal prey at t=0 (0–53 legal prey visible per founder, nearest legal quarry 0–6 tiles, most 0–2). Carnivore band still **0 at the first census** on all three seeds | **Kept.** It fixed the contact failure it was written for; it does not by itself keep the band alive |
 | Founder metabolic load 1.15 → 0.8 (`traits.ts`, `metabolism.founders.carnivore`) | Identical outcome: founder band 0 at the first census, carnivore band 0 at every census, on all three seeds. Whole-world death tallies *worsened* (seed `evolab`: starvation 2895 → 4073, thermal 1517 → 2108). Final population 3196/3190 and 3200/3196 — the ceiling, not the band, sets the number | **Rejected** (not committed) |
+| (d) **The meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`, engine unchanged) | **0.00 legal animals inside the cohort's own senses** (radius 7.6–8.5 tiles) at every scan, both seeds; the nearest animal this cohort is allowed to eat is **6.6–8.7 tiles away**. The cohort's whole life: 0.229–0.251 E of meat per animal-tick against 0.352–0.371 burnt, plant 0.0000, reserves 11.9 → 0.0, all 12 founders dead inside the first 250-tick window | **Measured, no engine change kept.** The failure is distance, not price |
+| (d) **Scavenging the world's litter** — a scavenge branch of `behaveHunt` (walk to the richest litter in sight, call `World.takeDetritus`); implemented, measured, **reverted** | Given that food the band drew **99.7 E in 530 feedings** at `evolab` (42.3 E at `evolab-2`; 18.0 E and 13.5 E in the two 48×48 runs) = **0.035–0.08 E per carnivore-tick**, against a pool that grows 186 → 6,108 E within 250 ticks while a founder stands on 0.54–0.69 E per animal-tick. The band was still **0 at the first census and at every census afterwards, pool open or closed**: final population 3199 open vs 3199 closed at `evolab`, 0 vs 0 at `evolab-2` | **Rejected**: it pays 0.04–0.08 E per carnivore-tick against a 0.35–0.37 E bill. Reverted |
 
-The two results together say the same thing: with legal prey visible a few tiles away and a smaller
-energy bill, the founder carnivores still do not eat. The remaining constraint is on the **supply of
-meat energy a strict carnivore can actually convert**, not on the band's own budget. That is the next
-candidate (a food-web change: who is available as quarry and what a kill yields), not a founder-trait
-change.
+**Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
+default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
+250-tick windows to 3000 ticks; the animal's own gates, chase rule and energy bill, read through the
+engine rather than recomputed). The cohort, in the window in which it dies:
+
+| What was measured | Reading |
+|---|---|
+| legal prey inside the animal's own sensory radius (7.6–8.5 tiles) | **0.00 animals holding 0.0 energy**, in every scan, both seeds |
+| what it is allowed to eat but cannot reach | 17 animals holding 102.9 E on `evolab`, 6 holding 20.6 E at `evolab-2`; the nearest one **6.6–8.7 tiles away** — outside the animal's senses, and outside its 2.3–2.4 tile strike range |
+| what its own chase rule will commit to | **0.00 animals, 0.0 energy.** The most valuable hunt it would ever accept: none. The best hunt it refuses: a body holding 4.3 E, 6.6 tiles away, closing that gap costs 5.7 E, and hunting costs 0.54–0.66 E per hunting-tick |
+| what the whole cohort ate | 0.229–0.251 E of meat per animal-tick, 0.0000 plant, against 0.352–0.371 burnt; reserves 11.9 → 0.0. The cohort (12 animals) is dead inside the first 250-tick window, on both seeds |
+| the carrion alternative, implemented and measured | a `behaveHunt` branch walking to the richest litter pile in sight and calling `World.takeDetritus`: **99.7 E drawn in 530 feedings** (0.077 E per carnivore-tick at `evolab`, 0.035–0.095 E per carnivore-tick at `evolab-2`), out of the 7,000–8,388 E the cohort asked for. The band is 0 at the first census and at every census afterwards, **pool open or closed**, on both seeds: 3199 open vs 3199 closed at `evolab`, 0 vs 0 at `evolab-2` |
+| the carrion that was available | a founder stands on 0.54–0.69 E of litter per animal-tick (richest single tile 5.8–6.6 E); the world's pool grows from 186 E to 9,861–11,854 E |
+
+**Verdict: no engine change kept.** The carrion branch was implemented, measured, and removed; the engine
+has no consumer of carrion again (`git diff` against HEAD is empty for `src/`). The measurement is what
+matters: at this body size a strict carnivore never sees an animal it is allowed to eat, the animals it is
+allowed to eat are 6.6–8.7 tiles away — further than its senses and far beyond its strike — and the food
+that is actually under its feet pays 0.04–0.08 E per carnivore-tick against a bill of 1.18. So the
+constraint is neither a price in the hunting formulas nor a missing food web: it is **distance**, and the
+only distance the engine can honestly change at t = 0 is the founders' own reach. Candidate (e) in §8 is
+the next measurement because the founders' thermal optimum (20–22 °C against a 26 °C baseline climate) is
+already adding to exactly that bill, and thermal stress is a top-three cause of death in §6C.
 
 **Seed sensitivity (measured, and it matters for the test suite).** Whole-world collapse is
 seed-dependent, in both the default world and the test configuration:
@@ -343,6 +363,8 @@ part of the vitest suite):
 | `tests/scratch-founder-metabolism.ts` | founder carnivore count and the whole carnivore band every 250 ticks, 3000 ticks, seeds `evolab`, `evolab-2`, `evolab-3`, with per-run death tallies (the candidate table in 6) |
 | `tests/scratch-founder-prey-visibility.ts` | legal prey (engine gates) visible to each founder carnivore at t=0, and the distance to the nearest legal quarry |
 | `tests/scratch-testconfig-collapse.ts` | whether the 48x48 test configuration collapses on the `evolab` seed |
+| `tests/scratch-meat-supply.ts` | the cohort's own meat economy in the window in which it dies: its own sensory radius, what it is allowed to eat and how far away it is, what its own chase rule would commit to, and its energy intake against its bill. Also reports what its strikes and kills cost |
+| `tests/scratch-carrion.ts` | the litter/detritus pool: how much of it a carnivore stands on, how much its hunting asks for, and how much it actually draws with and without a scavenging behaviour in the engine. Runs both the default world and the 48x48 configuration |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -361,13 +383,18 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       carnivores 15 around a fertile core) — kept: it fixed the contact failure it was written for
       (§6A), the band still dies;
    c. ❌ **lower founder metabolic load 1.15 → 0.8** — rejected, measured null (§6D).
-   Next candidate, in order:
-   d. **The meat-energy supply of a strict carnivore**: the legal-prey mass/energy gates and what a
-      kill yields (`preyIsLegal`, `pickQuarry`, the absorbed-energy formula). Two candidates found
-      dead ends in the carnivore's own budget; this is the other side of the exchange.
-   e. **Founder adaptation to local conditions** (thermal optimum matched to spawn climate):
-      thermal stress is a top-three cause of death at every population scale (§6C).
-   f. If a multi-band community survives, **re-measure carrying capacity**; only if it is still
+   d. ❌ **the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`, no engine change):
+      0.00 legal animals inside the cohort's own senses (radius 7.6–8.5 tiles) at every scan, both
+      seeds; nearest animal it is allowed to eat 6.6–8.7 tiles away; whole meat economy 0.23–0.25 E
+      per animal-tick against a 0.35–0.37 bill. The diagnosis moved from price to distance (§6D).
+   e. ❌ **opening the world's litter pool to it** (`World.takeDetritus` given to `behaveHunt`): it
+      drew 0.04–0.08 E per carnivore-tick, and every census came out the same with the pool open or
+      closed. Rejected, and the change was reverted; the engine has no carrion consumer.
+   f. **Next candidate, in order: founder adaptation to local conditions** (thermal optimum matched to
+      the climate the founders are spawned into). Thermal stress is a top-three cause of death in every
+      run (§6C) and it is a term of the same energy bill the measurements above are charging the
+      cohort.
+   g. If a multi-band community survives, **re-measure carrying capacity**; only if it is still
       pinned at the ceiling, lower primary productivity (sunlight/rainfall) so the ecosystem
       settles below 3200 on its own instead of being clipped.
 4. Acceptance test for the next candidate, measured on three seeds: the founder band is still alive
