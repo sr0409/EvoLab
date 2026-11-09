@@ -139,7 +139,6 @@ function run(seed: string, mode: Mode): RunResult {
       carrion[tile] = CARRION_MAX
       const overflow = amount - room
       carrionBuried += overflow
-      internals.ledger.burial += overflow
     }
     const taken = amount < room ? amount : room
     if (source === 'kill') fromKills += taken
@@ -362,6 +361,7 @@ function run(seed: string, mode: Mode): RunResult {
     predation: predationBefore,
     starvation: sim.deathTotals().starvation,
     naturalDeaths: sim.totalDeaths() - predationBefore,
+    baselineOk,
   }
 }
 
