@@ -576,6 +576,55 @@ seed-dependent, in both the default world and the test configuration:
 Any candidate must therefore be measured on at least three seeds, and "population 0 at tick 1250"
 counts as a collapse, not a stable community.
 
+**E. Why they starve — an integration of the energy-budget measurements.** This subsection says in one place what
+the records of candidates (d), (g), (i), (o), (p), (q) and (r), and the §6B answer, have already measured. Nothing
+here is new measurement and no engine change is implied; every figure quoted exists in the records cited.
+
+The engine's arithmetic makes a strict carnivore the most expensive animal in the world and then gives it one
+revenue stream. Founders are seeded with the highest metabolic load in the population (metabolic rate 1.15 against a
+herbivore's 0.9), the highest movement speed (sprint 1.8 — and the move cost is set by distance and speed), and the
+same thermo cost every other animal pays. The only energy that enters them is the **kill**: each kill delivers at most
+`prey.energy × (0.45 + 0.45 × digest)`, the remainder sinks to litter; an animal at `energy ≤ 0.2` is not prey at
+all; and an adult at diet ≥ 0.7 has no plant channel at all. Starvation is what that arithmetic prints whenever
+realised kill throughput falls below the bill — and every probe that has priced a carnivore's day has measured
+exactly that:
+
+- Intake against bill: 0.229–0.251 E of meat per animal-tick against 0.352–0.371 burnt, reserves 11.1 → 0.0 (the
+  meat-supply probe, candidate d); kills firing from the first tick still only gross 0.347 E of prey body against a
+  0.352–0.371 bill (candidate g); under the (h) founder ratio, 0.103 kills per animal-tick and 0.350 E of meat
+  against 0.458 burnt — net **−0.111 E per animal-tick** (§5 item 1); kill cycles stay 40–50 ticks even where the
+  chase succeeds (§6B, the quarry-commitment measurements).
+- Every supplementary channel prices at a fraction of the bill: walking to the richest litter in sight draws
+  0.035–0.08 E per animal-tick (the scavenge branch — implemented, measured, reverted); a carrion pool peaking at
+  846 E inside the band's own senses moves the band's intake by a few E across a 3000-tick run (candidate p);
+  pricing every carrion walk finds it pays for only a quarter to a third of the walks offered, and founds nothing
+  (candidate q); raising `digest` is recorded as not the lever (§6B); lowering the founder metabolic load 1.15 → 0.8
+  worsens whole-world deaths and leaves the band at 0 at every census (§6D table).
+- None of the failure modes excluded along the way is the cause: contact with prey (fixed by clustered spawning, the
+  band still 0 at the first census); the size window (no engine predator has ever declined a prey for size); thermal
+  stress (0 thermal deaths in founder bands across the candidate records — the 12-seed scan does record thermal
+  deaths among some founders, but starvation is the dominant founder cause on every seed); refusing chases (candidate
+  o: removing the refusals made the cohort shorter-lived and no better fed); the walkability of meat (candidate q:
+  the meat is reachable, affordable and does nothing).
+- The starvation of *established* bands — the deaths that dominate the (m) arm of the scan — is the same arithmetic
+  at equilibrium: the band over-harvests the prey within its own senses; `preyIsLegal`'s `energy > 0.2` gate then
+  excludes the thinned survivors (the introduction probe shows adults at equilibrium too thin to be legal prey), and
+  the plant channel that could cover the bill is closed to adults. The healthiest band this project has measured —
+  20 members, 11 adults, inherited diets averaging 0.965, predation doing real work at 16,782 deaths — still starves
+  202 adults and 240 recruits. A band is not failing to hunt; its realised throughput still sits under its bill.
+
+So the honest answer to "why do they starve" is: a strict carnivore's realised energy intake in this world sits
+consistently below its metabolic bill — not because meat is unavailable (supply, price, walkability and size have all
+been measured, and none is the binding constraint) but because kill throughput, the engine's only carnivore revenue,
+cannot be sustained at bill-rate, and the one channel that could make up the difference — plants — is closed to
+adults by design. The only intervention that has moved the outcome is reopening that channel for the young
+(candidate m) — itself evidence for where the binding constraint sits.
+
+What remains genuinely open is *why* kill throughput cannot exceed the bill at equilibrium. The intake-vs-bill
+figures above are measured; the dynamics behind them — how thin a prey population's bodies sit against the
+`energy > 0.2` gate, and how fast thinned prey rebuild body energy inside a band's hunting range — have never been
+priced. A candidate aimed at §6B gate 1 should measure that before adding a mechanism. (§8 candidate list, step 4.)
+
 ---
 
 ## 7. The measurement probe (`tests/scratch.test.ts`)
