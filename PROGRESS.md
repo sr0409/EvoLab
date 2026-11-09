@@ -82,6 +82,9 @@ tests/scratch-testconfig-ratio.ts    diagnostic: the same ratio question on the 
                                      `npx vite-node`
 tests/scratch-late-introduction.ts   diagnostic: carnivores introduced into an established producer world;
                                      `npx vite-node`
+tests/scratch-recruitment-scan.ts    diagnostic: which links of the carnivore recruitment chain each of 12
+                                     seeds reaches at 3000 ticks, both allowance arms; writes its report to
+                                     `.dev/recruitment-scan.txt`, which is git-ignored (`npx vite-node`)
 ```
 
 The sim modules import each other directly and save/restore lives inside `engine.ts`
@@ -219,8 +222,12 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
    `evolab-3`, the population is **not** pinned at the ceiling: it leaves 3182–3200 and settles at
    2814–2939 for the last 1250 ticks, with **6837 predation deaths** over the run and 219/338/6837
    predation deaths across the three tested variants of that ratio. That is the first measurement in this
-   project where predators, not the cap, move the number. It is one seed of three; the other two remain
-   ceiling-pinned, so this is a lead, not yet the world's behaviour.
+   project where predators, not the cap, move the number. §6D candidate (r) has since measured it on 12 seeds:
+   on the (m) arm 11 of 12 seeds peak at 3195–3201 and 5 of 12 sit at 3200 at a census, while
+   `evolab-3` peaks at 3063 with the ceiling never reached (16,782 predation deaths doing the work), and
+   `evolab-10` on the (m)-off arm peaks at 2967 with 4,910 predation deaths. The exception is real and
+   repeatable — predators move the number where a band is strong — but on the (m) arm it holds on one
+   seed of twelve, so the bar in §8 step 4 is still unmet.
 3. ~~`npm run test:perf` and `npm run test:all` cannot run: `vitest.perf.config.ts` does not
    exist.~~ Closed by milestone 6: the perf runner and `tests/perf/engine.perf.ts` exist; 3 benchmarks
    pass (baselines recorded in §10).
@@ -350,6 +357,8 @@ every 250 ticks. The engine was not changed for a candidate until the candidate 
 | **Candidate (p): carrion as meat the band can eat — kill leftovers held as carrion instead of sinking to litter** — a per-tile carrion pool in `world.ts` capped at `CARRION_MAX = 30` E and sinking into litter at `CARRION_SINK_RATE = 0.03` per tick, fed by the body mass a kill leaves uneaten (the leftover candidate (c) measured); a band animal whose `pickQuarry` returns nothing eats the carrion standing on **its own tile** at `0.45 + 0.45 · gutFill`. Implemented in `engine.ts` / `world.ts`, measured with `tests/scratch-carrion-scavenge.ts`, which runs a third arm in which natural-cause deaths (starvation, thermal stress, old age) feed the same pool; the committed engine is reinstated at runtime for the baseline arm | The baseline arm reproduces the committed engine exactly on all three seeds — band 0 / 0 / 20 at 3000, populations 3197 / 3191 / 2346, predation 601 / 151 / 16,782. With carrion from kills only the pool peaks at **4.5 / 1.1 / 6.6 E** and the band eats **2.6 / 1.6 / 2.5 E** on it, in **6 / 4 / 5 meals**, against 151.2 / 150.1 / 274.4 E deposited and 148.6 / 148.5 / 271.9 E sinking back to litter uneaten. Opening the pool to every natural-cause corpse makes it two hundred times larger — **161.7 + 32,203.9 / 265.1 + 28,665.4 / 608.3 + 38,109.6 E** in, peaks of **846.0 / 621.7 / 870.9 E**, 31,974.6 / 28,501.3 / 38,219.2 E sinking unused — and the band's intake barely moves: **2.6 / 3.3 / 4.6 E**. Band at the 3000-tick census: **0 / 0 / 0** on both carrion arms on all three seeds, against **0 / 0 / 20** with carrion off. What carrion does change is who gets eaten: predation falls 601 → 141, 151 → 149, 16,782 → 232 (155 / 321 / 714 on the corpse-fed arm); the `evolab-3` population that candidate (m) left oscillating 281–3063 sits back on the 3200 cap for the whole run, and its band's starvation deaths fall 8 → 5 as four members live to die of old age instead | **Rejected, no engine change kept.** The quantity of carrion is not what the band lacks: a pool peaking at 846–871 E bought intake of 2.6 → 4.6 E, because carrion is only reached by an animal that has already failed to find prey **and is standing on the carcass**. A meat source with no consumer that can find it behaves like the meat it replaced. What §6D candidate (c) left untested — whether a carnivore can *detect and walk to* a carcass — is the next candidate (§6D candidate q) |
 | **Candidate (q): carrion a carnivore has to walk to — every food the animal can reach is priced** — a `behaveHunt` branch which, when `pickQuarry` returns nothing, scans the carrion standing inside the animal’s own perception and prices each candidate exactly as `pursuitIsWorthwhile` prices a live chase — the bite that animal can actually take, against the cost of the ticks its own speed needs to cross the distance — and walks to the best carcass whose walk pays for itself; implemented for measurement in `engine.ts` and run with `tests/scratch-carrion-walk.ts` against the candidate (p) feet-priced arm and the committed engine | The baseline arm reproduces the committed engine exactly on all three seeds — band 0 / 0 / 20 at 3000, populations 3197 / 3191 / 2346, predation 601 / 151 / 16,782. The walk rule is asked 504 / 822 / 1,170 times and walks **111 / 106 / 413** of them (22% / 13% / 35%); every refusal is priced — 393 / 716 / 757 refusals of walks that do not pay, 0 refusals for having no reserve. Carrion eaten rises from 26 meals on the feet-priced arm to **636** (111 / 109 / 416, of which 111 / 100 / 406 at walked-to carcasses) and band carrion intake from 2.6 / 3.3 / 4.6 E to **82.0 / 73.8 / 316.2 E**; the carrion pools stand at 314.0 / 366.8 / 440.7 E at 3000 (peaks 810.8 / 496.1 / 889.6 E) with 31,419.2 / 18,294.7 / 37,721.3 E sunk unused. Predation falls to 153 / 126 / 301; band at the 3000-tick census **0 / 0 / 0** on all three seeds (it appeared mid-run on 2 of 3 seeds, peaking at 1 / 0 / 2), no seed collapsed (populations 3194 / 3193 / 3196), against 0 / 0 / 20 with carrion off | **Rejected, no engine change kept.** The §6D bar — a strict-carnivore lineage present at the 3000-tick census on at least two seeds — is met on 0 of 3. With nothing left to refuse, walking to meat is worth taking only a quarter of the time it is offered, and reach is not the binding constraint either: the meat is reachable, affordable, and still does not found a population. The ground candidate (p) left untested is now measured; what remains is §6B gate 1 — the founding cohort’s energy flow and recruitment |
 
+| **(r) Multi-seed recruitment scan — a measurement, not a candidate.** `tests/scratch-recruitment-scan.ts`: 12 seeds `evolab`, `evolab-2` … `evolab-12` × 3000 ticks on the committed engine, plus the same 12 seeds with `juvenilePlantAllowance` patched to return zero. Counts each link of the recruitment chain separately — the tick the founding strict cohort reaches zero and of what cause; whether a strict individual is ever born, and whether its parents were strict; whether any such recruit lived past its own `maturityAge` (read off the kill event, age against `phenotype.maturityAge` — no new engine rule); the band census at every 250 ticks; peak band adults; the inherited-diet spread at the final census | The two arms reproduce the two baselines already on file exactly: with (m) live, bands 0 / 0 / 20 on `evolab` / `evolab-2` / `evolab-3` (populations 3201 / 3199 / 3063, predation 601 / 151 / 16,782); with it patched off, 0 / 0 / 11 (predation 338 / 161 / 6,837). The scan instruments the runs without moving them. **Rates with candidate (m) live, 12 seeds:** a founder cohort that lasts — 0 / 12, every seed's cohort gone between ticks 198 and 1,044; a strict offspring born — **12 / 12**, every one of them from a strict parent, first at ticks 30–91; a recruit that lived to its own maturityAge — 10 / 12; a band at the 3000-tick census — **1 / 12**. **With (m) off:** strict births 12 / 12 seeds but 2–50 per seed rather than 516, recruits that matured 12 / 12, bands at 3000 on 2 / 12 — `evolab-3` at 11 members averaging **0.676** (every one inside 0.66–0.70) and `evolab-10` at 2 at mean 0.691 (whole-population mean 0.551), while the (m) arm's `evolab-3` band ends at 20 members averaging 0.965. On nine of the twelve seeds the band reaches adults and then dies out within 250–500 ticks of its own first competent adults (`evolab-6`: 19 members at 2250, gone by 2250+250; `evolab-8`: peak 23, gone by 2000), and the death ledger on those seeds is **starvation first** — 5 / 7 / 10 / 5 / 78 / 11 / 6 / 13 / 11 recruit starvation deaths per seed, against 0–12 old-age deaths and 0–2 predation deaths. Population ceiling: 11 of 12 seeds peak at 3189–3201, only `evolab-3` stays under it | **No candidate, no engine change.** What it establishes is where the chain breaks: recruitment is not rare (12 / 12 seeds produce strict young, 10 / 12 raise one to maturity), the loss is what happens **after** — a band that has reached adulthood and is then starved out inside a few hundred ticks, on a population that is sitting at the 3200 ceiling on every seed but one. (m) raises the number of carnivores a seed can hold (peak band adults 50 against 8 on `evolab-3`) but not the number of seeds that keep one (1 / 12 against 2 / 12). The raw per-seed record is at `.dev/recruitment-scan.txt`. |
+
 **Candidate (d), measured: the meat a strict carnivore can reach** (`tests/scratch-meat-supply.ts`;
 default world, seeds `evolab` and `evolab-2`, plus the same runs on the 48×48 test configuration;
 250-tick windows to 3000 ticks; the animal's own gates, chase rule and energy bill, read through the
@@ -444,9 +453,9 @@ already adding to exactly that bill, and thermal stress is a top-three cause of 
   and a community carrying a carnivore band are anti-correlated: every configuration robust enough to carry a
   band fills the cap, and the only rung that stays under it cannot bootstrap founders at all. The barrier
   remains exactly where (h) and (j) left it — §6B: no plant channel for a strict diet, and no offspring line
-  surviving the founding overharvest. **With (k) the ordered candidate list this plan defines is exhausted**;
+  surviving the founding overharvest. **Measurement continued past (k): the candidates measured after it (l)-(q) are recorded in §6D, and the 12-seed scan (r) shows the default ratio meeting the acceptance bar on**;
   the only configuration that meets the acceptance bar anywhere is the default 120/18/6, and it meets it on
-  1 seed of 3. Continuing is no longer a measurement question: it requires a new class of mechanism (§8).
+  1 seed of 12. Continuing is no longer a measurement question: it requires a new class of mechanism (§8).
 
 - **(l) tested that new class — pack hunting — and it ruled out the size gate itself.**
   §6B's size refuge is the barrier no single predator can open: prey only has to stay above
@@ -528,13 +537,19 @@ reproducing the committed engine exactly on all three seeds before any compariso
 Read literally that is impossible by the engine's own founder design: founders are seeded as adults with
 `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can be alive at tick 3000, and
 carnivore offspring never close the gap (candidate g/gate B-1). The bar is therefore measured as it was
-written in §6D: **a carnivore band — any individuals, phenotype diet > 0.66 — alive at the 3000-tick
-census on at least two seeds**. Current state with candidate (m)'s allowance in the engine: a live band
-at 3000 on 1 of 3 seeds — on `evolab-3` it is alive at every census from tick 250 and ends with 20
-members, 11 adult, all strict-heritage diets — while `evolab` and `evolab-2` stand at 0 on every census
-of both arms. Not yet met. The plant half of §6B gate 1 is closed — band offspring now survive the gap
-and stay in the band — and what remains is upstream of it: on two seeds the founding cohort dies before
-it produces any juvenile a rule could act on.
+written in §6D and restated after the 12-seed scan (r): **a strictly inherited carnivore band — every
+member at inherited diet > 0.70 — alive at the 3000-tick census on at least 2 of 12 seeds**. The 0.66
+threshold stays where it is in the engine: it is where candidate (m)'s allowance band begins, not where
+persistence begins. Standing with candidate (m)'s allowance in
+the engine, measured over all 12 seeds: a strict-inheritance band alive at 3000 on 1 of 12 seeds — on
+`evolab-3` it is alive at every census from tick 250 and ends at 20 members, 11 adults, at inherited diets
+averaging 0.965 — while 11 of the 12 seeds stand at 0 band members at the final census. With candidate
+(m) patched off, the two surviving bands are `evolab-3` at 11 members averaging 0.676 and `evolab-10` at
+2 averaging 0.691 — both inside the 0.66–0.70 boundary band, neither above the 0.70 the strict-carnivore
+bar asks for. Not met. The plant half of §6B gate 1 is closed — band offspring now survive the gap and
+stay in the band — and what remains is what the scan measures: on every seed but one a band that reaches
+adults is starved out within a few hundred ticks, and every seed's founding cohort reaches zero between
+ticks 198 and 1,044.
 
 **The test world needs its own ratio.** The 48×48 fixture in `tests/helpers.ts` is 6.5% of the default
 world's area with a 500-creature cap, and candidate (g) made its 15/4/3 founder loading collapse: on seeds
@@ -626,6 +641,7 @@ part of the vitest suite):
 | `tests/scratch-pursuit-flight-gate.ts` | the candidate (o) A/B measurement: the chase gate swapped on the instance — the committed gate reinstated for the baseline arm, the engine's flight-priced gate for the candidate arm — and every `pursuitIsWorthwhile` call about animals the strict cohort may eat priced against the walk to a quarry standing still, alongside band censuses, the founders' hunt chain and energy ledger, attributed band deaths, and inherited-diet buckets at the final census |
 | `tests/scratch-carrion-scavenge.ts` | the candidate (p) measurement: the committed engine, the same engine with carrion fed only by kill leftovers, and the same engine with carrion fed by every natural-cause corpse — carrion energy standing on the map at each census, the peak pool and the energy it takes in, what the band eats and how many carrion meals it takes, attributed band deaths, and the baseline arm verified against the recorded baseline on all three seeds |
 | `tests/scratch-carrion-walk.ts` | the candidate (q) measurement: the same carrion pool made *reachable* — the committed engine, candidate (p)'s standing-carrion rule, and the rule that prices a visible carcass with the animal's own energy bill and walks to it; how many times the walk rule is asked, how many walks it takes, how many it refuses and for what reason, carrion eaten with and without the walk, strict-band censuses and pool size at every 250-tick census, attributed band deaths, and the baseline arm verified against the recorded baseline on all three seeds |
+| `tests/scratch-recruitment-scan.ts` | the candidate (r) measurement: 12 seeds `evolab`, `evolab-2` … `evolab-12` × 3000 ticks run twice — the committed engine, and the same engine with `juvenilePlantAllowance` patched to return zero at runtime — each arm checked against its recorded baseline before any comparison. Per seed it reports the tick the founding strict cohort reaches zero and of what cause, every strict birth and whether its parents were strict or born strict, whether any recruit lived past its own `maturityAge`, the strict band at every 250-tick census, peak band adults, the band at the 3000-tick census, the population peak and how many censuses sat at the 3200 ceiling, predation, and the inherited-diet buckets at the final census |
 
 Each probe prints a table and nothing else; a candidate's numbers are copied from that output into
 §6D. They are kept in the tree so every recorded result can be re-run.
@@ -791,16 +807,48 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
        the carrion question; closing it leaves the binding constraint where candidate (o) left it
        — the founding cohort’s energy flow and recruitment (§6B gate 1), not where the meat is.
        (§6D candidate q.)
-4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
-   (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
+   r. ✅ **The 12-seed recruitment scan — a measurement, not a candidate.** `tests/scratch-recruitment-scan.ts`,
+      both arms (§6D candidate r), 12 seeds × 3000 ticks on the committed engine and with (m) patched
+      off. Every link of the recruitment question tallied per seed: a strict animal is born on
+      **12/12** seeds, every time from strict parents, always after the seed cohort has died; a strict
+      recruit lives past its own `maturityAge` on 10/12; a band of adults forms on 8/12; and a band is
+      alive at the 3000-tick census on **1/12** — `evolab-3`, 20 members, 11 adults, mean inherited
+      diet 0.965, lineage 15 generations deep with no seeded animal in it. With (m) patched off, the
+      two survivors are boundary cases: 11 members averaging 0.676 and 2 at 0.691 — inside the
+      engine's 0.66 candidate gate, not above the strict 0.70 line the bar asks for. On both arms,
+      every band that reached adulthood lost it to starvation within a few hundred ticks, and every
+      seed's founder cohort reached zero between ticks 198 and 1,044. **Verdict: not the acceptance
+      bar — 1 seed of the 12 required 2.** The scan's value is that it measures each link without
+      adding any rule: it shows the remaining barrier is exactly §6B gate 1 — the founding cohort's
+      own energy flow and recruitment — with everything downstream of it now instrumented. Full per-seed
+      record in §6D row r. (Report: `.dev/recruitment-scan.txt`, regenerated by re-running the probe.)
+   s. **Next candidate (proposed, not yet built): cooperative predation — a pack acting on the hunt.**
+      The scan localises what is left. Bands now found, recruit, mature, and reach adulthood on most
+      seeds, and then starve *as adults*; adult hunting itself is the one survival channel candidates
+      (l)–(q) never touched, because every one of them fed the young or priced a choice, none changed
+      what an adult in a group can take down. The proposed mechanism: band members hunting **in
+      concert** — a pack acting on prey no single member could take, with the chase following the pack
+      rather than an individual's own reach. It would be gated the way (l) and (m) were: active only
+      between animals already inside the band (inherited diet > 0.70), only when several band members
+      are near the same prey, never for a founder, and energy-costed like every other act — so it
+      cannot manufacture food from nothing and cannot rescue the founder cohort (that barrier stays
+      §6B gate 1, and (r) says no downstream rule can fix it). **Probe first** with a new
+      `tests/scratch-*.ts` before any engine change: on the 12-seed harness, measure whether a
+      priced pack kill changes band-adult starvation at all, and how often several band members are
+      ever near the same prey — if they are not, the mechanism has no prey to act on and is rejected
+      without an engine change.
+4. Acceptance test, restated as §6D and the 12-seed scan record it: **a strictly inherited carnivore band
+   — every member at phenotype diet > 0.70 — alive at the 3000-tick census on at least 2 of 12 seeds**, no
    seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here
    until now — "the founder band is still alive at tick 3000" — cannot be met by design: founders are
    seeded as adults with `maturityAge` 140 and `maxAge` 1100 (`traits.ts`), so no founder individual can
    still be alive at tick 3000. Standing for the 120/18/6 default, with candidate (m)'s allowance in the
-   engine: a band alive at 3000 ticks on 1 seed of 3 — on `evolab-3` a band alive at every census from
-   tick 250, ending at 20 members with 11 adults, at inherited diets averaging 0.965, in a world
-   oscillating 281–3063 rather than capped — and 0 at every census on `evolab` and `evolab-2`, on both
-   arms, with no seed collapsed. **Not met yet.** A candidate that
+   engine: per the 12-seed scan (r), a band alive at 3000 on **1 of 12** seeds — `evolab-3`, alive
+   at every census from tick 250, ending at 20 members with 11 adults at inherited diets averaging
+   0.965, on a world whose population never reaches the ceiling; and 0 at the final census on the
+   other 11 seeds. With candidate (m) patched off the survivors are 2/12, both inside the candidate
+   gate: `evolab-3` at 11 members averaging 0.676 and `evolab-10` at 2 at mean 0.691, neither above
+   the 0.70 the bar asks for, and no seed collapsed. **Not met yet.** A candidate that
    only works while the population is pinned at the 3200 ceiling does not count.
 5. ✅ Done (milestone 5). The diagnosis became assertion tests: `tests/conservation.test.ts`
    (1000-tick energy audit), `tests/determinism.test.ts`, `tests/lineage.test.ts` (inheritance /
