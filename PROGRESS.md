@@ -693,6 +693,27 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
       constraint is not the founders' age: it is that the only meat in these worlds is what adult
       founders make, and on two seeds the founding cohort spends that window dying.
       (§6D candidate n.)
+   o. ❌ **price the chase gate with the engine's own prey-flight behaviour** —
+       `pursuitIsWorthwhile` modelled quarry flight as "fleeing at full speed if healthy and above
+       45% of reserve"; this candidate replaced that model with the flight behaviour the engine
+       itself runs in `updateCreature`: quarry is threatened only above the threat-mass ratio,
+       flees only within the lesser of its own sense radius and the engine's fleet limit, only
+       while its reserve stands above 0.45, and a quarry below 0.25 stands its ground instead of
+       being assumed to flee. Implemented in `engine.ts`, measured A/B on identical seeds with
+       `tests/scratch-pursuit-flight-gate.ts`, the committed gate reinstated on the instance for
+       the baseline arm, which reproduces the recorded baseline exactly on all three seeds.
+       **Rejected; the engine change was reverted.** The probe first priced the committed gate's
+       refusals: 444 / 460 / 41,438 refusals, **72–90% of them priced away by the flight model
+       alone** (the bite would have covered the walk cost on its own against a quarry standing its
+       ground), while quarry at or above the hunter's own speed accounted for 0 / 0 / 182 — the
+       flight model was almost never the reason a hunt was refused. Replacing it opens exactly
+       those refusals, and the founding cohort is worse for it: cohort animal-ticks 977 → 809,
+       958 → 665, 2,442 → 624; the `evolab-3` band peaks at 19 against 88 and ends at 15 against
+       20, at inherited diets averaging 0.686 against 0.965. Bands at the 3000-tick census:
+       **0 / 0 / 15** — 1 of 3 seeds. The refusals the candidate removed were load-bearing: they
+       kept founders out of chases the whole hunt cannot pay for. The chase gate is not the
+       binding constraint; §6B gate 1 — the founding cohort's energy flow and the recruitment gap
+       — is. (§6D candidate o.)
 4. Acceptance test, restated as §6D records it and measured on three seeds: **a carnivore band
    (phenotype diet > 0.66, any individuals) alive at the 3000-tick census on at least two seeds**, no
    seed collapsing to population 0, and the 48x48 fixture no longer collapsing. The wording used here
