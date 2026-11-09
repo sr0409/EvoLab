@@ -10,7 +10,12 @@
  */
 import { reactive } from 'vue'
 import { Simulation } from './sim/engine'
-import { applyScenario, defaultConfig, findScenario } from './sim/config'
+import {
+  applyScenario,
+  defaultConfig,
+  findScenario,
+  setPopulationCap as applyPopulationCap
+} from './sim/config'
 
 export const SPEED_PRESETS = [
   { label: '0.5×', ticksPerSecond: 2 },
@@ -24,21 +29,28 @@ const MAX_TICKS_PER_FRAME = 12
 
 export type MapView = 'terrain' | 'biomass' | 'temperature'
 
+let sim = new Simulation(defaultConfig())
+
 const ui = reactive({
   running: false,
   speedIndex: 2,
   mapView: 'biomass' as MapView,
   scenarioId: '',
+  /**
+   * The population ceiling in force on the live simulation, mirrored from
+   * `sim.config.population.maxCreatures` so the control bar can show and edit it
+   * even while the world is paused. The engine keeps reading the config value
+   * every tick; this is the UI's view of it.
+   */
+  populationCap: sim.config.population.maxCreatures,
   /** Bumped once per simulation frame; panels watch this to redraw. */
   frame: 0,
-  /** Generation of the Simulation instance; changes when a new world is made. */
+  /** Generation of the Simulation instance; changes when a world is replaced. */
   epoch: 0,
   selectedSpeciesId: -1
 })
 
 export { ui }
-
-let sim = new Simulation(defaultConfig())
 
 /** The live Simulation. Plain object — never make this reactive. */
 export function getSim(): Simulation {
@@ -106,15 +118,35 @@ export function selectScenario(id: string): void {
 }
 
 /**
+ * Set the population ceiling on the running world, at any time. The engine reads
+ * `config.population.maxCreatures` every tick, so the new ceiling applies on the
+ * next tick without restarting the world: breeding stops while the population is
+ * at or above it, and a population already above a lowered ceiling comes back
+ * down through ordinary deaths instead of being culled. The value is remembered
+ * so "new world" keeps it, the same way the selected scenario is kept.
+ */
+export function setPopulationCap(value: number): void {
+  ui.populationCap = applyPopulationCap(sim.config, value)
+  ui.frame++
+}
+
+/** Restore the default population ceiling. */
+export function resetPopulationCap(): void {
+  setPopulationCap(defaultConfig().population.maxCreatures)
+}
+
+/**
  * Replace the simulation with a fresh world. If a scenario is selected it is
  * applied to the new config immediately, so "regenerate world" keeps the
- * selected climate preset.
+ * selected climate preset; the manually set population ceiling is carried over
+ * for the same reason.
  */
 export function newWorld(seed?: string): void {
   const config = defaultConfig()
   config.world.seed = seed && seed.trim() ? seed.trim() : randomSeed()
   const scenario = findScenario(ui.scenarioId)
   if (scenario) applyScenario(config, scenario)
+  ui.populationCap = applyPopulationCap(config, ui.populationCap)
   sim = new Simulation(config)
   pendingTicks = 0
   ui.epoch++

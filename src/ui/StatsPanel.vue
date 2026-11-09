@@ -19,6 +19,7 @@ const snap = computed(() => {
   return {
     tick: sim.tick,
     seasonName: sim.season.name,
+    cap: ui.populationCap,
     census,
     audit,
     deaths,
@@ -49,8 +50,8 @@ function fmtInt(n: number): string {
     <template v-else>
       <div class="stat-grid">
         <div class="stat">
-          <div class="stat-label">Population</div>
-          <div class="stat-value">{{ fmtInt(snap.census.population) }}</div>
+          <div class="stat-label">Population / cap</div>
+          <div class="stat-value">{{ fmtInt(snap.census.population) }} / {{ fmtInt(snap.cap) }}</div>
         </div>
         <div class="stat">
           <div class="stat-label">Species alive</div>

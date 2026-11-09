@@ -1,23 +1,25 @@
 <script setup lang="ts">
 /**
  * Top control bar (milestone 4): run controls, speed, seed, scenario presets,
- * and map view selection. All state lives in the store; this component only
- * forwards user intent to it.
+ * the manual population ceiling, and map view selection. All state lives in the
+ * store; this component only forwards user intent to it.
  */
 import { computed, ref } from 'vue'
 import {
   SPEED_PRESETS,
   getSim,
   newWorld,
+  resetPopulationCap,
   selectScenario,
   setMapView,
+  setPopulationCap,
   setSpeed,
   stepOnce,
   toggleRunning,
   ui
 } from '../store'
 import type { MapView } from '../store'
-import { SCENARIOS } from '../sim/config'
+import { POPULATION_CAP_LIMITS, SCENARIOS } from '../sim/config'
 
 const seedInput = ref('')
 
@@ -30,7 +32,8 @@ const readout = computed(() => {
     tick: sim.tick,
     seed: sim.config.world.seed,
     season: sim.season.name,
-    creatures: sim.size
+    creatures: sim.size,
+    cap: ui.populationCap
   }
 })
 
@@ -49,6 +52,16 @@ function onScenarioChange(event: Event): void {
 function onSpeedChange(event: Event): void {
   const select = event.target as HTMLSelectElement
   setSpeed(Number(select.value))
+}
+
+/**
+ * Apply a manually entered population ceiling to the running world. The store
+ * clamps it to POPULATION_CAP_LIMITS, and the input is re-rendered with the
+ * value the simulation is actually using.
+ */
+function onCapChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  setPopulationCap(Number(input.value))
 }
 
 function createWorld(): void {
@@ -91,6 +104,22 @@ function createWorld(): void {
     </div>
 
     <div class="group">
+      <label class="group-label" for="population-cap">Population cap</label>
+      <input
+        id="population-cap"
+        class="cap"
+        type="number"
+        :value="ui.populationCap"
+        :min="POPULATION_CAP_LIMITS.min"
+        :max="POPULATION_CAP_LIMITS.max"
+        step="10"
+        title="Hard ceiling on living creatures. Breeding stops at the ceiling; it takes effect on the running world immediately."
+        @change="onCapChange"
+      />
+      <button @click="resetPopulationCap()" title="Restore the default population ceiling">Default</button>
+    </div>
+
+    <div class="group">
       <label class="group-label">Map view</label>
       <div class="segmented">
         <button
@@ -108,7 +137,7 @@ function createWorld(): void {
       <span>tick {{ readout.tick }}</span>
       <span>seed: {{ readout.seed }}</span>
       <span>season: {{ readout.season }}</span>
-      <span>{{ readout.creatures }} creatures</span>
+      <span>{{ readout.creatures }} / {{ readout.cap }} creatures</span>
     </div>
   </header>
 </template>
@@ -167,6 +196,10 @@ button.active {
 
 .seed {
   width: 140px;
+}
+
+.cap {
+  width: 78px;
 }
 
 .segmented {

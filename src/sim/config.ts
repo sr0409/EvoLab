@@ -58,9 +58,18 @@ export interface EvolutionConfig {
 export interface PopulationConfig {
   /** Founder counts per diet archetype. */
   founders: Record<DietClass, number>
-  /** Hard ceiling on living creatures (a modelling limit, not biology; clamped to 4000). */
+  /**
+   * Hard ceiling on living creatures (a modelling limit, not biology). The engine
+   * reads it every tick and the UI can change it at any time with
+   * `setPopulationCap`, so it takes effect on a running world without a restart:
+   * breeding stops at the ceiling, and a population already above a lowered
+   * ceiling falls back under it through ordinary deaths rather than a cull.
+   */
   maxCreatures: number
 }
+
+/** Bounds the ceiling can be set to. A world smaller than this cannot hold a viable ecosystem. */
+export const POPULATION_CAP_LIMITS = { min: 20, max: 4000 } as const
 
 export interface SimConfig {
   world: WorldConfig
@@ -173,6 +182,24 @@ export function applyScenario(config: SimConfig, scenario: Scenario): void {
   normalizeConfig(config)
 }
 
+/**
+ * Set the population ceiling on a live configuration (the UI's manual control).
+ * Values are rounded and kept inside POPULATION_CAP_LIMITS. Returns the ceiling
+ * actually applied, so the UI can show what the simulation is really using.
+ */
+export function setPopulationCap(config: SimConfig, value: number): number {
+  config.population.maxCreatures = clampPopulationCap(value)
+  return config.population.maxCreatures
+}
+
+export function clampPopulationCap(value: number): number {
+  // Hard design limit: an EvoLab world runs at most a few thousand animals.
+  return Math.max(
+    POPULATION_CAP_LIMITS.min,
+    Math.min(POPULATION_CAP_LIMITS.max, Math.round(clampNum(value, POPULATION_CAP_LIMITS.min, POPULATION_CAP_LIMITS.max)))
+  )
+}
+
 /** Validate & clamp user input so a stray slider value cannot break the sim. */
 export function normalizeConfig(config: SimConfig): void {
   const w = config.world
@@ -198,8 +225,7 @@ export function normalizeConfig(config: SimConfig): void {
   v.mutationStrength = clampNum(v.mutationStrength, 0, 4)
   v.speciationThreshold = clampNum(v.speciationThreshold, 0.01, 0.6)
   const p = config.population
-  // Hard design limit: an EvoLab world runs at most a few thousand animals.
-  p.maxCreatures = Math.max(20, Math.min(4000, Math.round(p.maxCreatures)))
+  p.maxCreatures = clampPopulationCap(p.maxCreatures)
   for (const diet of DIET_CLASSES) {
     const requested = p.founders[diet] ?? 0
     p.founders[diet] = Math.max(0, Math.min(4000, Math.round(requested)))

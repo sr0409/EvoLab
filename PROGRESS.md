@@ -16,8 +16,8 @@ an open question in §6 rather than stated as fact._
 | 1 Foundation | **mostly done** | Vite + TypeScript scaffold, seeded serialisable RNG, procedural world/terrain, headless engine with ordered fixed-timestep updates, save/restore state |
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
-| 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log. Verified against the running dev server: tick advances, canvas paints, panels populate |
-| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean |
+| 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log, and a manual population-cap control in the run bar. Verified against the running dev server: tick advances, canvas paints, panels populate |
+| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 7 files / 31 tests: `tests/population-cap.test.ts` was added with the control described in §3.) |
 | 6 Performance / E2E | **done, measured** | `vitest.perf.config.ts` + `tests/perf/engine.perf.ts` (a separate runner; `*.perf.ts` is never matched by `npm run test`): default 168×112 world builds in ~18 ms and runs at 13–16 ms/tick with a warm population of ~3200 — the UI budget at 10 ticks/s is <100 ms/tick shared with rendering; 48×48 test world at its 500-creature ceiling ~1.4 ms/tick; save/restore ~4 ms. Limits are floors (~3–30× headroom), so a red perf test means an algorithmic blow-up. E2E: `playwright.config.ts` + `e2e/app.e2e.ts` drive the real app against the real engine on a dedicated dev-server port: readout reflects the world, Step advances exactly one tick per click, Run/Pause control the loop, seed input creates a world with that seed and resets the tick. `npm run test:perf` → 3/3 pass; `npm run test:e2e` → 4/4 pass; unit suite and `npm run build` remain green |
 
 ---
@@ -39,7 +39,8 @@ src/sim/species.ts    species registry, centroid genomes, speciation and extinct
 src/sim/lineage.ts    compact parent-of-creature genealogy (inbreeding checks for mating)
 src/sim/spatial.ts    spatial hash grid used for neighbour queries
 src/sim/stats.ts      census, per-trait statistics, history ring buffers
-src/sim/config.ts     `defaultConfig()`, scenario presets (`SCENARIOS`)
+src/sim/config.ts     `defaultConfig()`, scenario presets (`SCENARIOS`), population ceiling
+                      (`POPULATION_CAP_LIMITS`, `clampPopulationCap`, `setPopulationCap`)
 src/sim/types.ts      shared types, behaviour constants, `DEATH_CAUSES`, `dietClassOf`
 src/sim/engine.ts     the step function, `EnergyLedger`, `auditEnergy()`, event log, census history,
                       `toState()` / `fromState()` with `SIM_STATE_VERSION`, `CHART_FIELDS`
@@ -48,14 +49,15 @@ src/main.ts           mounts `src/App.vue` into `index.html`
 src/env.d.ts          Vue SFC module declaration
 src/store.ts          owns the `Simulation` and the requestAnimationFrame loop (capped ticks per
                       frame); reactive `ui` control state only (running / speed / map view / selected
-                      species / `frame`), `getSim()`, `stepOnce`, `newWorld`, scenario + speed presets
+                      species / `frame`), `getSim()`, `stepOnce`, `newWorld`, scenario + speed presets,
+                      the live population ceiling (`setPopulationCap` / `resetPopulationCap`)
 src/App.vue           app shell; starts the loop on mount, stops it on unmount
 src/ui/ControlBar.vue run/pause/step, speed select, seed + new world, scenario presets, map-view
-                      buttons, live tick/season/creature readout
+                      buttons, population cap field, live tick/season/creature readout
 src/render/WorldCanvas.vue  one-pixel-per-tile ImageData (terrain / biomass / temperature views)
                       upscaled to the display canvas, then creature dots; reads only, never writes
 src/ui/StatsPanel.vue live census, diet-composition bars, trait averages, deaths by cause, the
-                      energy audit with a drift indicator
+                      energy audit with a drift indicator, population against the live ceiling
 src/ui/ChartsPanel.vue canvas line charts from `sim.seriesSamples` over `CHART_FIELDS`
 src/ui/SpeciesTable.vue species roster (lineage, abundance, peak, status); rows select a species for
                       the map highlight
@@ -96,7 +98,7 @@ The pieces §3 used to list as missing are written and verified live:
    bounded `requestAnimationFrame` loop (`MAX_TICKS_PER_FRAME` caps a frame's work; speed presets
    2–10 t/s; pause / single-step). The `Simulation` instance is deliberately **not** made reactive;
    components read it through `getSim()` and redraw when `ui.frame` / `ui.epoch` advance.
-2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets.
+2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets, and the manual population cap field below.
 3. `src/render/WorldCanvas.vue` — a renderer that only *reads*: terrain/biomass/temperature from
    `world`'s tile arrays into an ImageData buffer upscaled to the display canvas, creature dots on
    top, species highlight on selection. It never writes simulation state.
@@ -107,6 +109,34 @@ Verified against the dev server (`npm run dev`, http://localhost:5173): clicking
 readout (measured 3296 → 3356 over 5 s), the season and creature counts update, the world canvas
 paints terrain and creatures, the census/species panels populate. `vue-tsc` is clean over the UI and
 `npm run test` stays green. Visual polish (layout, palette, minimap) is deferred.
+
+**Manual population cap (added after milestone 4).** `src/sim/config.ts` now exports
+`POPULATION_CAP_LIMITS` (20–4000), `clampPopulationCap(value)` and `setPopulationCap(config, value)`, which
+clamps and returns the ceiling actually applied; `normalizeConfig` clamps through the same function.
+`src/store.ts` mirrors the live `config.population.maxCreatures` in `ui.populationCap` and exports
+`setPopulationCap(value)` / `resetPopulationCap()`; `newWorld` carries the chosen cap over to the new world,
+the same way it carries the selected scenario. The ControlBar gained a "Population cap" number field (min/max
+from the limits, step 10, with a Default button) and both readouts show `population / cap`.
+
+The engine only consults the ceiling where a birth would be added, so a change takes effect on the next tick
+of a running world: it is a brake on breeding, not a cull — a population above a newly lowered ceiling simply
+cannot breed until ordinary deaths bring it back under. Measured with `tests/scratch-cap-probe.ts` on the
+48×48 fixture (starting cap 500, 2000 ticks, population sampled every 100 ticks):
+
+| seed | change | measured result |
+|---|---|---|
+| `probe-a` | cap 500 → 150 at t=400 | 177 at t=300, 152 at t=400, then held at 150–152 for the remaining 1600 ticks |
+| `probe-a` | cap 500 → 60 at t=800 | 502 at t=700, then 474 → 440 → 396 → 350 → 302 (t=800…1200): the excess dies off, nothing is culled |
+| `probe-a` | cap raised back to 500 at t=1300 | 302 at t=1200, 501 at t=1300 and stable to t=2000: breeding resumes with no restart |
+| `probe-b` | the same two changes | 133 at t=400 (already under the new ceiling) then 150–153 for the rest; 458 → 212 after the second change; 494–502 after the raise |
+
+`tests/population-cap.test.ts` (6 tests) covers the clamping (including NaN and fractional input), applying a
+lowered and a raised ceiling to a running world without restarting it, and the store wiring.
+
+Verified live in the running UI: entering `100` showed `144 / 100 creatures`; `9999` was clamped to 4000 and `5`
+to 20. With the ceiling at 20 the 144 founders were not culled — the count fell to 76 by tick 72 and to 0 by
+tick 3189, and nothing was removed when the ceiling was lowered. "Default" restored 3200, and "New world" then
+built a fresh world at `144 / 3200`.
 
 ---
 
@@ -787,7 +817,7 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
 
 ```
 npm run dev                              # dev server — the live interface (http://localhost:5173)
-npm run test                           # vitest — 6 files / 25 tests pass (milestone 5)
+npm run test                           # vitest — 7 files / 31 tests pass
 npm run build                          # vue-tsc + vite build — clean
 npm run typecheck                    # vue-tsc — clean (it type-checks tests/**/*.ts)
 npx vitest run tests/scratch.test.ts   # the food-web probe on its own
@@ -795,6 +825,8 @@ npx vite-node tests/scratch-pursuit.ts # per-chase-episode diagnostic (prints)
 npx vite-node tests/scratch-population.ts [ceiling]
                                        # population trajectory vs the ceiling; optional
                                        # ceiling override raises maxCreatures for the run
+npx vite-node tests/scratch-cap-probe.ts
+                                       # the ceiling lowered, then raised, on a live world (§3)
 npm run test:perf                  # perf benchmarks — 3 pass; measured baselines in §10
 npm run test:e2e                   # Playwright E2E — 4 pass (chromium against the dev server)
 npm run test:all                   # unit + perf + e2e in sequence — all green
@@ -827,4 +859,5 @@ default world): **1.3 ms/tick at population 58 (tick 200) → 13–16 ms/tick at
 any population size tested.
 
 E2E run cost: `npm run test:e2e` — 4 chromium tests, ~5 s total.
+
 
