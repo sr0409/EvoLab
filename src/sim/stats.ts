@@ -28,6 +28,8 @@ export interface CensusRecord {
   herbivores: number
   omnivores: number
   carnivores: number
+  /** Mean diet gene of the living population: 0 plant-only, 1 strict meat. */
+  meanDiet: number
   speciesAlive: number
   speciesTotal: number
   births: number
@@ -58,6 +60,7 @@ export const CENSUS_FIELDS = [
   'herbivores',
   'omnivores',
   'carnivores',
+  'meanDiet',
   'speciesAlive',
   'births',
   'deaths',
@@ -86,6 +89,7 @@ export const CENSUS_FIELD_LABELS: Record<CensusField, string> = {
   herbivores: 'Herbivores',
   omnivores: 'Omnivores',
   carnivores: 'Carnivores',
+  meanDiet: 'Mean diet gene (0 plant → 1 meat)',
   speciesAlive: 'Living species',
   births: 'Births / tick',
   deaths: 'Deaths / tick',
@@ -146,6 +150,7 @@ export function computeCensus(
     herbivores: byDiet.herbivore,
     omnivores: byDiet.omnivore,
     carnivores: byDiet.carnivore,
+    meanDiet: meanOf(TRAIT_INDEX.diet),
     speciesAlive: 0,
     speciesTotal: speciesCount,
     births: 0,

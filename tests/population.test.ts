@@ -11,8 +11,8 @@ import { FOUNDER_COUNT, testConfig } from './helpers'
  * The engine samples a census at the end of every 5th tick, after dead
  * creatures have been removed and newborns admitted. Every census must agree
  * with the live population: the same head count, diet classes that partition
- * it exactly, species bookkeeping that agrees with the species registry, and
- * birth/death counts that add up over the whole run.
+ * it exactly, a diet mean computed from it, species bookkeeping that agrees with
+ * the species registry, and birth/death counts that add up over the whole run.
  */
 
 const CENSUS_PERIOD = 5
@@ -73,6 +73,22 @@ describe('population dynamics', () => {
     expect(last.herbivores).toBe(live.herbivore)
     expect(last.omnivores).toBe(live.omnivore)
     expect(last.carnivores).toBe(live.carnivore)
+  })
+
+  it('the census mean diet gene is the mean diet gene of the living population', () => {
+    // Mean diet is what makes the "diet melt" question answerable: it says
+    // whether a diet class disappeared because its animals died, or because
+    // their diet gene drifted. It must therefore track the live population.
+    const last = censuses[censuses.length - 1]
+    let sum = 0
+    for (const c of sim.creatures) sum += c.genome[TRAIT_INDEX.diet]
+    const expected = sim.creatures.length ? sum / sim.creatures.length : 0
+    expect(last.meanDiet).toBeCloseTo(expected, 6)
+    // The mean sits inside the class bounds the same census reports: it is a
+    // property of the animals counted, not a separate measurement.
+    expect(last.meanDiet).toBeGreaterThanOrEqual(0)
+    expect(last.meanDiet).toBeLessThanOrEqual(1)
+    if (last.carnivores > 0) expect(last.meanDiet).toBeLessThan(1)
   })
 
   it('birth and death census records add up to the whole run', () => {

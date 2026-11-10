@@ -17,7 +17,7 @@ an open question in §6 rather than stated as fact._
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
 | 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log, and a manual population-cap control in the run bar. Verified against the running dev server: tick advances, canvas paints, panels populate |
-| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 10 files / 54 tests: `tests/min-prey-energy.test.ts`, `tests/population-cap.test.ts`, `tests/assimilation-base.test.ts`, and `tests/juvenile-plant-allowance.test.ts` were added with the controls described in §3.) |
+| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 11 files / 58 tests: `tests/min-prey-energy.test.ts`, `tests/population-cap.test.ts`, `tests/assimilation-base.test.ts`, `tests/juvenile-plant-allowance.test.ts` and `tests/chart-fields.test.ts` were added with the controls described in §3.) |
 | 6 Performance / E2E | **done, measured** | `vitest.perf.config.ts` + `tests/perf/engine.perf.ts` (a separate runner; `*.perf.ts` is never matched by `npm run test`): default 168×112 world builds in ~18 ms and runs at 13–16 ms/tick with a warm population of ~3200 — the UI budget at 10 ticks/s is <100 ms/tick shared with rendering; 48×48 test world at its 500-creature ceiling ~1.4 ms/tick; save/restore ~4 ms. Limits are floors (~3–30× headroom), so a red perf test means an algorithmic blow-up. E2E: `playwright.config.ts` + `e2e/app.e2e.ts` drive the real app against the real engine on a dedicated dev-server port: readout reflects the world, Step advances exactly one tick per click, Run/Pause control the loop, seed input creates a world with that seed and resets the tick. `npm run test:perf` → 3/3 pass; `npm run test:e2e` → 4/4 pass; unit suite and `npm run build` remain green |
 
 ---
@@ -260,6 +260,75 @@ live on the default world: the roster rendered 144 group rows covering all 1849 
 largest, `Ferrusylv`, covering 336), and expanding one showed its 14 members with lineage and extinction
 data. The chart picker's field select also gained the explicit "Chart metric" label it had been missing.
 
+**Diet census field and multi-series charts (added after the above).** Nothing of the diet melt §5 and §6
+describe has ever been visible in the app: the chart picker offered population, living species, temperature,
+biomass and the trait averages, and nothing on the diet side. `computeCensus` already summed the diet genes of
+the animals it was partitioning, so `meanDiet` — that same mean, `meanOf(TRAIT_INDEX.diet)` — is now a
+`CensusRecord` field and a member of `CENSUS_FIELDS`, labelled "Mean diet gene (0 plant → 1 meat)". It is one
+field added to the census the engine already samples, not a second measurement: `tests/population.test.ts`
+asserts it equals the mean recomputed from `sim.creatures` after the run (agreement to 6 places) and that it
+sits inside the bounds implied by the same census's class counts. `CHART_FIELDS` (`src/sim/engine.ts`) grew from 7 entries
+to 14: the seven it had, plus `herbivores`, `omnivores`, `carnivores`, `meanDiet`, `births`, `deaths`,
+`meanEnergyRatio` — the diet partition, the diet mean and the flow terms, which is what makes it possible to
+tell "the high-diet animals died" apart from "their diet gene drifted". `tests/chart-fields.test.ts`
+(3 tests) pins that every chartable field is a measured, labelled census field, that the diet and death series
+the question needs are among them, and that each buffered series reproduces the census that produced it
+sample for sample — oldest first, on census ticks, with `seriesLatest` agreeing with the last census, which is
+what the legend reads.
+
+`src/ui/ChartsPanel.vue` was rebuilt around a single chart: a labelled primary select, up to two "Compare
+with" overlay selects, a `Scale: shared` / `Scale: per series` toggle so a head-count series and a 0–1 trait
+mean can share an axis or each get their own, a `(N samples)` counter, and a legend that reports each drawn
+series' latest value and its observed range. `toState()` / `fromState()` and `SIM_STATE_VERSION` are
+untouched: the series are rebuilt from the engine's census history on restore, as they were.
+
+Measured with `tests/scratch-diet-melt.ts` on the default world (168×112), three runs, seeds `evolab`,
+`evolab-2` and `evolab-3`, each reporting the diet classes and the census mean at every 250-tick window to
+tick 3000. Report: `.dev/diet-melt.txt`, git-ignored; `npx vite-node tests/scratch-diet-melt.ts` reproduces
+these numbers exactly (§9).
+
+| seed | census mean diet, 250 → 3000 | lowest census mean | diet classes away from herbivore |
+|---|---|---|---|
+| `evolab` | 0.1018 → 0.1010 | 0.0966 at 750 | 16 omnivores + 1 carnivore at 250, 1 carnivore at 500, none at or after 750; 25 omnivores at 750, 0 from 2500 |
+| `evolab-2` | 0.0924 → 0.0600 | 0.0583 at 2000 | 1 omnivore at 250, never more than 2, **no carnivore at any census** |
+| `evolab-3` | 0.1051 → 0.1011 | 0.0950 at 500 | 9 omnivores + 4 carnivores at 250, 30 carnivores at 1000, 44 at 1500, 73 at 1750, peak 88 at 2750, 20 at 3000 |
+
+The inheritance half settles what those curves mean. `diet` is a genome trait fixed at birth, so a moving
+population mean can only be a change in *who is alive*, and the probe measures the other side directly: on
+`evolab` 17,006 newborns with both parents observed inherit a diet mean of 0.0976 against a mid-parent mean of
+0.0971; on `evolab-2` 14,795 newborns inherit 0.0609 against 0.0599; on `evolab-3` 27,151 newborns inherit 0.1163
+against 0.1160. The high-diet line is not pulled down either: `evolab` has one newborn of parents whose
+mid-parent diet is above 0.66 and it inherits 0.9225 against 0.8999; the 6 such newborns on `evolab-2` inherit
+0.8993 against 0.8994, **all 6 still above 0.66**; the 516 on `evolab-3` inherit 0.9625 against 0.9636,
+**all 516 still above 0.66**. Crossover and mutation are not pulling high-diet blood toward herbivory, so a
+falling `meanDiet` is not the trait melting: it is the roster changing. On `evolab` the founders' high-diet
+descendants thin out — 1 carnivore at the 250 and 500 reports, none at or after 750, the omnivore tail peaking
+at 25 at 750 and gone by 2500 — and the mean dips 0.1018 → 0.0966 at 750 and ends at 0.1010. `evolab-2` is the
+same story with no band at all: no carnivore appears at any census, and the field runs 0.0924 → 0.0583 →
+0.0600. Where the band does recruit the field rises with it, and it tracks the band's *share* of the animals
+rather than its raw head-count: on `evolab-3` the census mean is 0.0950 at the 500-tick report (10 carnivores
+among 950 animals), 0.1692 at 1750 (73 among 1054), 0.1564 at 2750 (88 among 1394) and 0.1011 at 3000 (20
+among 2346). Plotting `meanDiet` against `carnivores`, `omnivores` and `deaths` on one chart is what tells
+those stories apart, which is exactly what the panel now draws.
+
+Per-class exit causes in that report are **inferred**, not recorded: the engine only ever tallies causes across
+the whole population (`evolab`: old age 4353 · starvation 3951 · disease 1611 · predation 601 · thermal stress
+3437; `evolab-2`: starvation 4884 · old age 3887 · disease 1932 · predation 151 · thermal stress 894;
+`evolab-3`: predation 16782 · starvation 3036 · disease 2867 · thermal stress 1732 · old age 532), and the probe
+attributes each tracked animal's exit the way `tests/scratch-carnivore-collapse.ts` does. On those attributions
+starvation and thermal stress, not predation, are what remove the high-diet animals: 7 inferred carnivore exits
+on `evolab` (5 thermal stress, 2 starvation), 12 on `evolab-2` (11 starvation, 1 thermal stress) and 502 on
+`evolab-3` (437 starvation, 50 thermal stress, 15 old age). §6B's engine tallies remain the recorded numbers.
+
+Verified live in the running UI (dev server, seed `evolab`): the "Chart metric" select lists all 14 entries
+with their labels; setting the primary to "Mean diet gene (0 plant → 1 meat)" and adding "Carnivores" then
+"Deaths / tick" as overlays drew all three series on one chart, and the legend reported live values with
+per-series ranges (`Mean diet gene 0.112 range 0.112 – 0.180`, `Carnivores 1.0 range 0 – 6`, `Deaths / tick
+1.0 range 0.000 – 10.0`) at the tick-1750 census, before the world was paused. The scale toggle and the
+add/remove overlay controls all responded and the app ran with no console errors. `npm run test` → 11 files /
+58 tests pass; `vue-tsc` clean. No engine rule, no config knob and no saved-state field changed;
+`tests/scratch-diet-melt.ts` is a diagnostic, not part of the suite.
+
 ---
 
 ## 4. Energy and nutrient accounting as it stands
@@ -331,6 +400,15 @@ different seeds diverge), inheritance/mutation bounds, engine genealogy and cens
    census from tick 250 and ends the run with 11 adult strict-heritage animals. What is still open is the
    other half of the same sentence — on `evolab` and `evolab-2` the founding cohort dies before it has a
    juvenile for that rule to act on, and no seed but `evolab-3` carries a band to the 3000-tick census.
+   **Measured from the census side, which is now possible (§3 addendum).** `tests/scratch-diet-melt.ts` reads the
+   census the engine samples at every 250-tick window on three seeds, and it separates the two explanations this
+   question used to conflate. The diet gene is not drifting downward: on every seed each newborn whose mid-parent
+   diet is above 0.66 inherits above 0.66 (1 on `evolab`, 6 on `evolab-2`, **516 on `evolab-3`, all 516 still in
+   the band**), and the population mean moves only with how many animals are standing in it — 0.0950 at the
+   500-tick census on `evolab-3` with 10 of 950 in the band, 0.1692 at 1750 with 73 of 1054. What removes them
+   is starvation and thermal stress, not predation (502 inferred carnivore exits on `evolab-3`: 437 starvation,
+   50 thermal stress, 15 old age). The open half of this item is the founding cohort and the recruitment gap, not
+   a diet gene sliding toward herbivory.
 2. **The population ceiling, not ecology, is what regulates numbers.** Same trace: the herd fills
    `maxCreatures` (3200) by ~tick 750 and stays pinned exactly there for the remaining 5000+
    ticks while vegetation stays healthy. Raising the ceiling to 12000 does not find a stable
@@ -1044,7 +1122,7 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
 
 ```
 npm run dev                              # dev server — the live interface (http://localhost:5173)
-npm run test                           # vitest — 10 files / 54 tests pass
+npm run test                           # vitest — 11 files / 58 tests pass
 npm run build                          # vue-tsc + vite build — clean
 npm run typecheck                    # vue-tsc — clean (it type-checks tests/**/*.ts)
 npx vitest run tests/scratch.test.ts   # the food-web probe on its own
@@ -1057,6 +1135,9 @@ npx vite-node tests/scratch-cap-probe.ts
 npx vite-node tests/scratch-jpa-probe.ts
                                        # the default-world band censuses behind the juvenile-plant-
                                        # allowance test, both arms (§3)
+npx vite-node tests/scratch-diet-melt.ts
+                                       # the diet-mean / diet-class trace behind the mean-diet chart
+                                       # series; writes .dev/diet-melt.txt (§3 addendum)
 npm run test:perf                  # perf benchmarks — 3 pass; measured baselines in §10
 npm run test:e2e                   # Playwright E2E — 4 pass (chromium against the dev server)
 npm run test:all                   # unit + perf + e2e in sequence — all green

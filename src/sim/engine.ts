@@ -171,9 +171,16 @@ const EVENT_POP_THRESHOLD = 20
 /** Census fields sampled into chart series. */
 export const CHART_FIELDS: readonly CensusField[] = [
   'population',
+  'herbivores',
+  'omnivores',
+  'carnivores',
+  'meanDiet',
   'speciesAlive',
+  'births',
+  'deaths',
   'temperature',
   'biomass',
+  'meanEnergyRatio',
   'meanFitness',
   'meanThermalOptimum',
   'thermalMismatch'
