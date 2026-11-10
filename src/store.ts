@@ -11,10 +11,11 @@
 import { reactive } from 'vue'
 import { Simulation } from './sim/engine'
 import {
+  setPopulationCap as applyPopulationCap,
+  setMinPreyEnergy as applyMinPreyEnergy,
   applyScenario,
   defaultConfig,
-  findScenario,
-  setPopulationCap as applyPopulationCap
+  findScenario
 } from './sim/config'
 
 export const SPEED_PRESETS = [
@@ -43,6 +44,12 @@ const ui = reactive({
    * every tick; this is the UI's view of it.
    */
   populationCap: sim.config.population.maxCreatures,
+  /**
+   * The quarry-energy floor in force on the live simulation, mirrored from
+   * `sim.config.predation.minPreyEnergy` (milestone 9). The engine re-reads
+   * that config value every tick, so changing it acts on a running world.
+   */
+  minPreyEnergy: sim.config.predation.minPreyEnergy,
   /** Bumped once per simulation frame; panels watch this to redraw. */
   frame: 0,
   /** Generation of the Simulation instance; changes when a world is replaced. */
@@ -136,10 +143,27 @@ export function resetPopulationCap(): void {
 }
 
 /**
+ * Set the quarry-energy floor (the engine's `prey.energy > 0.2` predation gate)
+ * at any time. The engine reads `config.predation.minPreyEnergy` every tick, so
+ * the new floor takes effect on the next tick of a running world: legal quarry
+ * becomes only animals whose energy reserve sits above it. Like the population
+ * ceiling, the value is carried across to a new world. (PROGRESS.md §6E.)
+ */
+export function setMinPreyEnergy(value: number): void {
+  ui.minPreyEnergy = applyMinPreyEnergy(sim.config, value)
+  ui.frame++
+}
+
+/** Restore the engine's original quarry-energy floor (0.2). */
+export function resetMinPreyEnergy(): void {
+  setMinPreyEnergy(defaultConfig().predation.minPreyEnergy)
+}
+
+/**
  * Replace the simulation with a fresh world. If a scenario is selected it is
  * applied to the new config immediately, so "regenerate world" keeps the
- * selected climate preset; the manually set population ceiling is carried over
- * for the same reason.
+ * selected climate preset; the manually set population ceiling and quarry-energy
+ * floor are carried over for the same reason.
  */
 export function newWorld(seed?: string): void {
   const config = defaultConfig()
@@ -147,6 +171,7 @@ export function newWorld(seed?: string): void {
   const scenario = findScenario(ui.scenarioId)
   if (scenario) applyScenario(config, scenario)
   ui.populationCap = applyPopulationCap(config, ui.populationCap)
+  applyMinPreyEnergy(config, ui.minPreyEnergy)
   sim = new Simulation(config)
   pendingTicks = 0
   ui.epoch++

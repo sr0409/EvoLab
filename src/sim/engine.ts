@@ -823,7 +823,11 @@ export class Simulation {
       // its own; until then the young are with their parents.
       o.age >= o.phenotype.maturityAge &&
       o.phenotype.mass < c.phenotype.mass * (0.35 + 1.7 * c.phenotype.diet) &&
-      o.energy > 0.2
+      // The live quarry-energy floor (config.predation.minPreyEnergy; 0.2 is
+      // the engine's own historical gate and the value every recorded
+      // measurement used). Raising it demands well-fed quarry — the experiment
+      // PROGRESS.md §6E asks about.
+      o.energy > this.config.predation.minPreyEnergy
     )
   }
 

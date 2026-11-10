@@ -17,7 +17,7 @@ an open question in §6 rather than stated as fact._
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
 | 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log, and a manual population-cap control in the run bar. Verified against the running dev server: tick advances, canvas paints, panels populate |
-| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 7 files / 31 tests: `tests/population-cap.test.ts` was added with the control described in §3.) |
+| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 8 files / 37 tests: `tests/population-cap.test.ts` and `tests/min-prey-energy.test.ts` were added with the controls described in §3.) |
 | 6 Performance / E2E | **done, measured** | `vitest.perf.config.ts` + `tests/perf/engine.perf.ts` (a separate runner; `*.perf.ts` is never matched by `npm run test`): default 168×112 world builds in ~18 ms and runs at 13–16 ms/tick with a warm population of ~3200 — the UI budget at 10 ticks/s is <100 ms/tick shared with rendering; 48×48 test world at its 500-creature ceiling ~1.4 ms/tick; save/restore ~4 ms. Limits are floors (~3–30× headroom), so a red perf test means an algorithmic blow-up. E2E: `playwright.config.ts` + `e2e/app.e2e.ts` drive the real app against the real engine on a dedicated dev-server port: readout reflects the world, Step advances exactly one tick per click, Run/Pause control the loop, seed input creates a world with that seed and resets the tick. `npm run test:perf` → 3/3 pass; `npm run test:e2e` → 4/4 pass; unit suite and `npm run build` remain green |
 
 ---
@@ -40,7 +40,9 @@ src/sim/lineage.ts    compact parent-of-creature genealogy (inbreeding checks fo
 src/sim/spatial.ts    spatial hash grid used for neighbour queries
 src/sim/stats.ts      census, per-trait statistics, history ring buffers
 src/sim/config.ts     `defaultConfig()`, scenario presets (`SCENARIOS`), population ceiling
-                      (`POPULATION_CAP_LIMITS`, `clampPopulationCap`, `setPopulationCap`)
+                      (`POPULATION_CAP_LIMITS`, `clampPopulationCap`, `setPopulationCap`), quarry-energy
+                      floor (`PredationConfig`, `MIN_PREY_ENERGY_LIMITS`, `clampMinPreyEnergy`,
+                      `setMinPreyEnergy`)
 src/sim/types.ts      shared types, behaviour constants, `DEATH_CAUSES`, `dietClassOf`
 src/sim/engine.ts     the step function, `EnergyLedger`, `auditEnergy()`, event log, census history,
                       `toState()` / `fromState()` with `SIM_STATE_VERSION`, `CHART_FIELDS`
@@ -50,10 +52,12 @@ src/env.d.ts          Vue SFC module declaration
 src/store.ts          owns the `Simulation` and the requestAnimationFrame loop (capped ticks per
                       frame); reactive `ui` control state only (running / speed / map view / selected
                       species / `frame`), `getSim()`, `stepOnce`, `newWorld`, scenario + speed presets,
-                      the live population ceiling (`setPopulationCap` / `resetPopulationCap`)
+                      the live population ceiling (`setPopulationCap` / `resetPopulationCap`) and the
+                      quarry-energy floor (`setMinPreyEnergy` / `resetMinPreyEnergy`)
 src/App.vue           app shell; starts the loop on mount, stops it on unmount
 src/ui/ControlBar.vue run/pause/step, speed select, seed + new world, scenario presets, map-view
-                      buttons, population cap field, live tick/season/creature readout
+                      buttons, population cap and prey-energy-floor fields, live tick/season/creature
+                      readout
 src/render/WorldCanvas.vue  one-pixel-per-tile ImageData (terrain / biomass / temperature views)
                       upscaled to the display canvas, then creature dots; reads only, never writes
 src/ui/StatsPanel.vue live census, diet-composition bars, trait averages, deaths by cause, the
@@ -69,7 +73,11 @@ tests/helpers.ts             shared test config (`testConfig`: 48×48 world, 20 
 tests/conservation.test.ts   energy-cycle assertions over 1000 ticks (see §4)
 tests/determinism.test.ts    same seed → identical state; different seeds diverge
 tests/lineage.test.ts        inheritance/mutation bounds + engine genealogy assertions
+tests/min-prey-energy.test.ts the quarry-energy floor as a knob: default equals the engine's original gate,
+                             bounds, normalize parity, and the live-config and store wiring (§3)
 tests/population.test.ts     census bookkeeping: schedule, diet partitioning, birth/death accounting
+tests/population-cap.test.ts the population ceiling as a knob: bounds, live ceiling changes without
+                             restarting a world, newWorld carry-over (§3)
 tests/physiology.test.ts     founder-archetype probe; runs (vitest)
 tests/scratch.test.ts        food-web cohort probe; rebuilt and runs (see §7)
 tests/scratch-pursuit.ts     diagnostic: per-hunt-episode results; run with `npx vite-node`
@@ -101,7 +109,7 @@ The pieces §3 used to list as missing are written and verified live:
    bounded `requestAnimationFrame` loop (`MAX_TICKS_PER_FRAME` caps a frame's work; speed presets
    2–10 t/s; pause / single-step). The `Simulation` instance is deliberately **not** made reactive;
    components read it through `getSim()` and redraw when `ui.frame` / `ui.epoch` advance.
-2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets, and the manual population cap field below.
+2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets, and the manual population cap and minimum prey energy fields below.
 3. `src/render/WorldCanvas.vue` — a renderer that only *reads*: terrain/biomass/temperature from
    `world`'s tile arrays into an ImageData buffer upscaled to the display canvas, creature dots on
    top, species highlight on selection. It never writes simulation state.
@@ -140,6 +148,34 @@ Verified live in the running UI: entering `100` showed `144 / 100 creatures`; `9
 to 20. With the ceiling at 20 the 144 founders were not culled — the count fell to 76 by tick 72 and to 0 by
 tick 3189, and nothing was removed when the ceiling was lowered. "Default" restored 3200, and "New world" then
 built a fresh world at `144 / 3200`.
+
+**Quarry-energy floor ("Prey energy floor", added after milestone 9).** The engine has always refused a quarry
+whose body energy sits at or below `0.2` — the gate §5 and §6E have referred to as `energy > 0.2`. That number is
+now `config.predation.minPreyEnergy` (`src/sim/config.ts`), with `MIN_PREY_ENERGY_LIMITS` (0–0.9),
+`clampMinPreyEnergy(value)` and `setMinPreyEnergy(config, value)` which clamps and returns the floor
+actually applied; `normalizeConfig` clamps through the same function and back-fills `0.2` for a saved config or
+snapshot that predates the `predation` section, so old saves restore the engine's original gate rather than an
+undefined one. `src/store.ts` mirrors it in `ui.minPreyEnergy` and exports `setMinPreyEnergy(value)` /
+`resetMinPreyEnergy()`; `newWorld` carries the chosen floor over to the new world the way it carries the scenario
+and the cap. The ControlBar field takes min/max from the limits with step 0.05 and a Default button that restores
+0.2. The default is the old constant, so no default world behaves differently from before this change.
+
+Unlike the cap, this one is read on every tick rather than only at a breeding decision: `preyIsLegal`
+(`src/sim/engine.ts:830`) now reads `o.energy > this.config.predation.minPreyEnergy`, so raising it takes effect
+on the next tick of a running world and takes it away again when it is lowered. It changes *which animals count as
+legal quarry* — it never removes or culls a living animal — and it is a separate gate from `pursuitIsWorthwhile`,
+which decides whether a legal quarry is worth the walking cost. Raising the floor therefore narrows a band's prey
+to well-fed adults; lowering it below 0.2 opens chases of animals carrying thin reserves, which is exactly the
+population state §6E says has never been measured. `tests/min-prey-energy.test.ts` (6 tests) covers the clamping
+(upper and lower bounds, fractional input, NaN), that the UI control and `normalizeConfig` clamp identically, that
+a config with no `predation` section restores 0.2, that the floor can be raised and lowered on a world already
+running without restarting it, and the store wiring.
+
+Verified live in the running UI: the field renders as a spinner on the control bar, setting it moves
+`ui.minPreyEnergy` and `sim.config.predation.minPreyEnergy` together, out-of-range and empty (NaN) input lands on
+the bound rather than corrupting the config, Default restores 0.2, and the app runs with no console errors. A
+measured ecology run at raised floors is the §6E experiment itself and has not been run yet; §6E closes by naming
+what such a scan would settle.
 
 ---
 
@@ -301,7 +337,9 @@ carnivory un-recolonizable:
    flip between (engine.ts 533–540); and `behaveHunt` forages instead of hunting below 0.2
    (engine.ts 782). An animal at the population's mean diet never hunts at all.
 2. Legal prey must be a **different species**, smaller than `hunter.mass × (0.35 + 1.7 × diet)`,
-   and carrying energy > 0.2 (`preyIsLegal`, engine.ts 734–741). When one herbivore lineage
+   and carrying energy above the quarry-energy floor (`preyIsLegal`, engine.ts ~824–831; the floor is
+   `config.predation.minPreyEnergy`, 0.2 at the default and every recorded measurement, and §3's "Prey
+   energy floor" field is that value made live). When one herbivore lineage
    covers every fertile tile, neighbours are conspecifics, and the cross-species juveniles that
    do exist are usually too thin (`energy > 0.2`) to be legal quarry.
 3. Fear works the same way: predator detection requires animals with `diet > 0.34` and
@@ -625,6 +663,15 @@ figures above are measured; the dynamics behind them — how thin a prey populat
 `energy > 0.2` gate, and how fast thinned prey rebuild body energy inside a band's hunting range — have never been
 priced. A candidate aimed at §6B gate 1 should measure that before adding a mechanism. (§8 candidate list, step 4.)
 
+That measurement has a handle now: §3's "Quarry-energy floor" is this same gate made configurable
+(`config.predation.minPreyEnergy`, read by `preyIsLegal` at engine.ts:830 on every tick). It is recorded here as a
+way of measuring the question, not as an answer to it: raising the floor does not give any animal more energy, it
+only removes thinned ones from what a band may chase, and no run at a raised floor has been run yet. With the floor
+as a parameter the scan is ordinary: hold everything else fixed, raise the floor in steps from 0.2, and read what
+happens to kill throughput and to the band's bill. If throughput is flat across floors, this paragraph's framing is
+wrong and the constraint sits elsewhere; if it moves, the distribution of quarry body energy against the floor is
+the number §6B gate 1 has been missing.
+
 ---
 
 ## 7. The measurement probe (`tests/scratch.test.ts`)
@@ -914,7 +961,7 @@ Each probe prints a table and nothing else; a candidate's numbers are copied fro
 
 ```
 npm run dev                              # dev server — the live interface (http://localhost:5173)
-npm run test                           # vitest — 7 files / 31 tests pass
+npm run test                           # vitest — 8 files / 37 tests pass
 npm run build                          # vue-tsc + vite build — clean
 npm run typecheck                    # vue-tsc — clean (it type-checks tests/**/*.ts)
 npx vitest run tests/scratch.test.ts   # the food-web probe on its own

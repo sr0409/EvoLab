@@ -1,17 +1,20 @@
 <script setup lang="ts">
 /**
  * Top control bar (milestone 4): run controls, speed, seed, scenario presets,
- * the manual population ceiling, and map view selection. All state lives in the
- * store; this component only forwards user intent to it.
+ * the manual population ceiling and the quarry-energy floor knob (milestone 9),
+ * and map view selection. All state lives in the store; this component only
+ * forwards user intent to it.
  */
 import { computed, ref } from 'vue'
 import {
   SPEED_PRESETS,
   getSim,
   newWorld,
+  resetMinPreyEnergy,
   resetPopulationCap,
   selectScenario,
   setMapView,
+  setMinPreyEnergy,
   setPopulationCap,
   setSpeed,
   stepOnce,
@@ -19,7 +22,7 @@ import {
   ui
 } from '../store'
 import type { MapView } from '../store'
-import { POPULATION_CAP_LIMITS, SCENARIOS } from '../sim/config'
+import { MIN_PREY_ENERGY_LIMITS, POPULATION_CAP_LIMITS, SCENARIOS } from '../sim/config'
 
 const seedInput = ref('')
 
@@ -62,6 +65,16 @@ function onSpeedChange(event: Event): void {
 function onCapChange(event: Event): void {
   const input = event.target as HTMLInputElement
   setPopulationCap(Number(input.value))
+}
+
+/**
+ * Apply a manually entered quarry-energy floor. The store clamps it to
+ * MIN_PREY_ENERGY_LIMITS, and the input is re-rendered with the value the
+ * simulation is actually using.
+ */
+function onMinPreyEnergyChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  setMinPreyEnergy(Number(input.value))
 }
 
 function createWorld(): void {
@@ -117,6 +130,22 @@ function createWorld(): void {
         @change="onCapChange"
       />
       <button @click="resetPopulationCap()" title="Restore the default population ceiling">Default</button>
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="min-prey-energy">Prey energy floor</label>
+      <input
+        id="min-prey-energy"
+        class="energy"
+        type="number"
+        :value="Number(ui.minPreyEnergy.toFixed(2))"
+        :min="MIN_PREY_ENERGY_LIMITS.min"
+        :max="MIN_PREY_ENERGY_LIMITS.max"
+        step="0.05"
+        title="Energy floor for legal quarry (engine gate prey.energy > 0.2). Raising it means only well-fed animals can be hunted; it takes effect on the running world immediately."
+        @change="onMinPreyEnergyChange"
+      />
+      <button @click="resetMinPreyEnergy()" title="Restore the engine's original quarry gate (0.2)">Default</button>
     </div>
 
     <div class="group">
@@ -200,6 +229,10 @@ button.active {
 
 .cap {
   width: 78px;
+}
+
+.energy {
+  width: 70px;
 }
 
 .segmented {

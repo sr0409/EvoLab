@@ -55,6 +55,18 @@ export interface EvolutionConfig {
   avoidInbreeding: boolean
 }
 
+export interface PredationConfig {
+  /**
+   * The energy floor a creature must hold to be legal quarry: the engine's
+   * `prey.energy > 0.2` gate, exposed as a knob (PROGRESS.md §6E asks how
+   * thinned prey bodies sit against it at equilibrium). The engine re-reads it
+   * every tick, so the control takes effect on a live world. Default 0.2 is
+   * the engine's own value: a world with the knob untouched behaves exactly
+   * as before.
+   */
+  minPreyEnergy: number
+}
+
 export interface PopulationConfig {
   /** Founder counts per diet archetype. */
   founders: Record<DietClass, number>
@@ -71,10 +83,20 @@ export interface PopulationConfig {
 /** Bounds the ceiling can be set to. A world smaller than this cannot hold a viable ecosystem. */
 export const POPULATION_CAP_LIMITS = { min: 20, max: 4000 } as const
 
+/**
+ * Bounds the prey-energy floor can be set to. 0.2 is the engine's own gate and
+ * reproduces every recorded measurement unchanged. The kill path separately
+ * demands energy ≥ 0.4 (findQuarry), so values between 0.4 and 0.9 turn the
+ * gate from "anything even alive" into "reasonably-fed quarry" — which is the
+ * experiment PROGRESS.md §6E asks for.
+ */
+export const MIN_PREY_ENERGY_LIMITS = { min: 0, max: 0.9 } as const
+
 export interface SimConfig {
   world: WorldConfig
   environment: EnvironmentConfig
   evolution: EvolutionConfig
+  predation: PredationConfig
   population: PopulationConfig
 }
 
@@ -106,6 +128,13 @@ export function defaultConfig(): SimConfig {
       mutationStrength: 1,
       speciationThreshold: 0.1,
       avoidInbreeding: true
+    },
+    predation: {
+      // The engine's own quarry gate (engine.ts `findQuarry`): a creature is
+      // legal prey only while its energy reserve sits above this floor. 0.2 is
+      // the value every recorded measurement (PROGRESS.md §6E–§6B) was made
+      // against, so the knob stays inert unless the user moves it.
+      minPreyEnergy: 0.2
     },
     population: {
       // Measured founder load (PROGRESS.md §6D, candidate h). 60/18/12 overharvests
@@ -200,6 +229,20 @@ export function clampPopulationCap(value: number): number {
   )
 }
 
+/**
+ * Set the live quarry-energy floor (config.predation.minPreyEnergy): the
+ * engine's `prey.energy > 0.2` predation gate exposed as a knob — the
+ * experiment PROGRESS.md §6E leaves open. Returns the value actually applied.
+ */
+export function setMinPreyEnergy(config: SimConfig, value: number): number {
+  config.predation.minPreyEnergy = clampMinPreyEnergy(value)
+  return config.predation.minPreyEnergy
+}
+
+export function clampMinPreyEnergy(value: number): number {
+  return clampNum(value, MIN_PREY_ENERGY_LIMITS.min, MIN_PREY_ENERGY_LIMITS.max)
+}
+
 /** Validate & clamp user input so a stray slider value cannot break the sim. */
 export function normalizeConfig(config: SimConfig): void {
   const w = config.world
@@ -224,6 +267,11 @@ export function normalizeConfig(config: SimConfig): void {
   v.mutationRate = clampNum(v.mutationRate, 0, 0.9)
   v.mutationStrength = clampNum(v.mutationStrength, 0, 4)
   v.speciationThreshold = clampNum(v.speciationThreshold, 0.01, 0.6)
+  // Snapshots saved before the quarry-floor knob existed lack the section;
+  // fill in the engine's own gate so old snapshots keep behaving exactly as
+  // they were measured.
+  const pd = (config.predation ??= { minPreyEnergy: 0.2 })
+  pd.minPreyEnergy = clampMinPreyEnergy(pd.minPreyEnergy)
   const p = config.population
   p.maxCreatures = clampPopulationCap(p.maxCreatures)
   for (const diet of DIET_CLASSES) {
