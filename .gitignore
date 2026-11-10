@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+.cache/
+test-results/
+.dev/
+blob-report/
+playwright-report/
+
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
