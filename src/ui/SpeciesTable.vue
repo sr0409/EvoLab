@@ -177,7 +177,7 @@ function pick(id: number): void {
               <td>
                 <span class="caret">{{ isExpanded(entry.key) ? '▾' : '▸' }}</span>
                 <em class="extinct-name">† {{ entry.genus }}</em>
-                <span class="subtle"> {{ entry.count }} extinct species</span>
+                <div class="group-count">{{ entry.count }} extinct species</div>
               </td>
               <td>
                 <span
@@ -283,6 +283,11 @@ tr.genus:hover {
 
 .extinct-name {
   color: #b8c2cc;
+}
+
+.group-count {
+  font-size: 10px;
+  color: #8b96a5;
 }
 
 .num {
