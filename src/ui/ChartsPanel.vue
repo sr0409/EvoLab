@@ -167,7 +167,8 @@ onBeforeUnmount(() => {
     <div class="panel-title">Time series</div>
 
     <div class="chart-controls">
-      <select :value="selectedField" @change="onFieldChange">
+      <label class="group-label" for="chart-field">Chart metric</label>
+      <select id="chart-field" :value="selectedField" @change="onFieldChange">
         <option v-for="field in CHART_FIELDS" :key="field" :value="field">
           {{ labelFor(field) }}
         </option>
@@ -197,6 +198,11 @@ select {
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 13px;
+}
+
+.group-label {
+  font-size: 12px;
+  color: #8b96a5;
 }
 
 .latest {
