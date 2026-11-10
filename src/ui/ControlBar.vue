@@ -1,15 +1,14 @@
 <script setup lang="ts">
 /**
  * Top control bar (milestone 4): run controls, speed, seed, scenario presets,
- * the manual population ceiling, quarry-energy floor, and assimilation base
- * knobs (milestone 9), and map view selection. All state lives in the store;
- * this component only forwards user intent to it.
+ * the manual population ceiling, quarry-energy floor, assimilation base, and
+ * juvenile plant allowance knobs (milestone 9), and map view selection. All
+ * state lives in the store; this component only forwards user intent to it.
  */
 import { computed, ref } from 'vue'
 import {
-  SPEED_PRESETS,
-  getSim,
-  newWorld,
+  resetJuvenilePlantAllowance,
+  setJuvenilePlantAllowance,
   resetAssimilationBase,
   resetMinPreyEnergy,
   resetPopulationCap,
@@ -21,11 +20,15 @@ import {
   setSpeed,
   stepOnce,
   toggleRunning,
-  ui
+  ui,
+  SPEED_PRESETS,
+  getSim,
+  newWorld
 } from '../store'
 import type { MapView } from '../store'
 import {
   ASSIMILATION_BASE_LIMITS,
+  JUVENILE_PLANT_ALLOWANCE_LIMITS,
   MIN_PREY_ENERGY_LIMITS,
   POPULATION_CAP_LIMITS,
   SCENARIOS
@@ -94,6 +97,16 @@ function onAssimilationBaseChange(event: Event): void {
   setAssimilationBase(Number(input.value))
 }
 
+/**
+ * Apply a manually entered juvenile plant allowance. The store clamps it to
+ * JUVENILE_PLANT_ALLOWANCE_LIMITS; 1 is the engine's committed rule, 0
+ * switches the candidate off.
+ */
+function onJuvenilePlantAllowanceChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  setJuvenilePlantAllowance(Number(input.value))
+}
+
 function createWorld(): void {
   newWorld(seedInput.value.trim() || undefined)
 }
@@ -102,19 +115,26 @@ function createWorld(): void {
 <template>
   <header class="control-bar">
     <div class="group">
+      <label class="group-label">Run</label>
       <button class="primary" @click="toggleRunning()">
         {{ ui.running ? 'Pause' : 'Run' }}
       </button>
       <button @click="stepOnce()">Step</button>
-      <select :value="ui.speedIndex" @change="onSpeedChange" title="Simulation speed">
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="sim-speed">Speed</label>
+      <select id="sim-speed" :value="ui.speedIndex" @change="onSpeedChange" title="Simulation speed">
         <option v-for="(preset, index) in SPEED_PRESETS" :key="index" :value="index">
-          Speed {{ preset.ticksPerSecond }} tps
+          {{ preset.ticksPerSecond }} tps
         </option>
       </select>
     </div>
 
     <div class="group">
+      <label class="group-label" for="world-seed">Seed</label>
       <input
+        id="world-seed"
         v-model="seedInput"
         class="seed"
         type="text"
@@ -179,6 +199,22 @@ function createWorld(): void {
         @change="onAssimilationBaseChange"
       />
       <button @click="resetAssimilationBase()" title="Restore the engine's original gut constant (0.45)">Default</button>
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="juvenile-plant-allowance">Juvenile plant allowance</label>
+      <input
+        id="juvenile-plant-allowance"
+        class="allowance"
+        type="number"
+        :value="Number(ui.juvenilePlantAllowance.toFixed(2))"
+        :min="JUVENILE_PLANT_ALLOWANCE_LIMITS.min"
+        :max="JUVENILE_PLANT_ALLOWANCE_LIMITS.max"
+        step="0.1"
+        title="Strength of the engine's juvenile plant allowance (default 1). Scales what strict-carnivore young may eat from plants before maturity; 0 switches the concession off. Takes effect on the running world."
+        @change="onJuvenilePlantAllowanceChange"
+      />
+      <button @click="resetJuvenilePlantAllowance()" title="Restore the engine's committed allowance (1)">Default</button>
     </div>
 
     <div class="group">

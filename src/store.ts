@@ -14,6 +14,7 @@ import {
   setPopulationCap as applyPopulationCap,
   setMinPreyEnergy as applyMinPreyEnergy,
   setAssimilationBase as applyAssimilationBase,
+  setJuvenilePlantAllowance as applyJuvenilePlantAllowance,
   applyScenario,
   defaultConfig,
   findScenario
@@ -58,6 +59,14 @@ const ui = reactive({
    * the hunt decision and the harvest.
    */
   assimilationBase: sim.config.predation.assimilationBase,
+  /**
+   * The juvenile plant allowance strength in force on the live simulation,
+   * mirrored from `sim.config.predation.juvenilePlantAllowance`: 1 is the
+   * engine's own committed rule (candidate (m)), 0 switches it off. The engine
+   * re-reads the config value every tick, so editing it acts on a running
+   * world.
+   */
+  juvenilePlantAllowance: sim.config.predation.juvenilePlantAllowance,
   /** Bumped once per simulation frame; panels watch this to redraw. */
   frame: 0,
   /** Generation of the Simulation instance; changes when a world is replaced. */
@@ -189,11 +198,32 @@ export function setAssimilationBase(value: number): void {
 }
 
 /**
+ * Set the strength of the engine's juvenile plant allowance (candidate (m)) on
+ * the running world at any time: the config value multiplies the base
+ * concession a strict-carnivore juvenile gets before `maturityAge`, capped at
+ * 1. 1 is the engine's own committed rule, 0 switches the candidate off (the
+ * baseline arm of the §6D measurements), so both measured configurations are
+ * reachable live. The engine reads the value on every plant-food decision, so
+ * it takes effect on the next tick. Like the other tuned controls, the setting
+ * carries across to a new world.
+ */
+export function setJuvenilePlantAllowance(value: number): void {
+  ui.juvenilePlantAllowance = applyJuvenilePlantAllowance(sim.config, value)
+  ui.frame++
+}
+
+/** Restore the engine's own rule (multiplier 1: the committed candidate (m) rule, unmodified). */
+export function resetJuvenilePlantAllowance(): void {
+  setJuvenilePlantAllowance(defaultConfig().predation.juvenilePlantAllowance)
+}
+
+/**
  * Replace the simulation with a fresh world. If a scenario is selected it is
  * applied to the new config immediately, so "regenerate world" keeps the
- * selected climate preset; the manually set population ceiling, quarry-energy
- * floor, and assimilation base are carried over for the same reason: they are
- * part of the experiment the user is running, not per-world settings.
+ * selected climate preset. The manually set population ceiling, quarry-energy
+ * floor, assimilation base, and juvenile plant allowance are carried over for
+ * the same reason: they are part of the experiment the user is running, not
+ * per-world settings.
  */
 export function newWorld(seed?: string): void {
   const config = defaultConfig()
@@ -203,6 +233,7 @@ export function newWorld(seed?: string): void {
   ui.populationCap = applyPopulationCap(config, ui.populationCap)
   applyMinPreyEnergy(config, ui.minPreyEnergy)
   applyAssimilationBase(config, ui.assimilationBase)
+  applyJuvenilePlantAllowance(config, ui.juvenilePlantAllowance)
   sim = new Simulation(config)
   pendingTicks = 0
   ui.epoch++

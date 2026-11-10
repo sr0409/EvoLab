@@ -931,12 +931,19 @@ export class Simulation {
    * carnivore boundary (diet 0.66) and falls to a floor at full carnivory
    * (1.0), so a lineage's juvenile concession tracks how close its diet gene
    * sits to the omnivore boundary — selection can act on the gene along that
-   * gradient instead of the concession being handed to the whole band.
+   * gradient instead of the concession being handed to the whole band. The
+   * base concession is multiplied by `config.predation.juvenilePlantAllowance`
+   * and capped at 1: the config default 1 reproduces the committed rule
+   * exactly, and 0 switches the candidate off entirely — the baseline arm of
+   * the §6D A/B scan. It is read every tick, so the knob acts on a live
+   * world.
    */
   private juvenilePlantAllowance(c: Creature): number {
     const ph = c.phenotype
     if (ph.diet <= 0.66 || c.age >= ph.maturityAge) return 0
-    return Math.max(0.2, Math.min(1, 1 - (ph.diet - 0.66) / 0.34))
+    const base = Math.max(0.2, Math.min(1, 1 - (ph.diet - 0.66) / 0.34))
+    const scaled = base * this.config.predation.juvenilePlantAllowance
+    return scaled > 1 ? 1 : scaled
   }
 
   private behaveHunt(c: Creature): number {

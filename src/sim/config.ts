@@ -74,6 +74,17 @@ export interface PredationConfig {
    * knob untouched behaves exactly as it did before.
    */
   assimilationBase: number
+  /**
+   * The strength of the engine's juvenile plant concession (candidate (m),
+   * PROGRESS.md §6D): the concession an animal in the strict band before
+   * `maturityAge` gets is multiplied by this value and capped at 1. Default
+   * 1.0 reproduces the engine's own rule exactly, which is what every (m)
+   * measurement was made against; 0 removes the concession — the exact baseline
+   * arm the recruitment scan measured against — and values above 1 widen it
+   * toward the full concession across the whole band. The engine reads it every
+   * tick, so the control takes effect on a live world.
+   */
+  juvenilePlantAllowance: number
 }
 
 export interface PopulationConfig {
@@ -108,6 +119,17 @@ export const MIN_PREY_ENERGY_LIMITS = { min: 0, max: 0.9 } as const
  * the ledger closes the same way.
  */
 export const ASSIMILATION_BASE_LIMITS = { min: 0, max: 0.9 } as const
+
+/**
+ * Bounds the juvenile-plant concession multiplier. 0 removes the concession
+ * entirely — the exact baseline arm of the §6D recruitment scan — and 1.0 is
+ * the engine's own committed rule, so the range covers both configurations
+ * those measurements were made against. Values above 1 widen the concession:
+ * it is capped at 1 at every setting, so a higher multiplier only lifts the
+ * deep-band end of the gradient: at 2 even a fully-carnivorous juvenile's
+ * concession starts at 0.4 instead of the engine's 0.2 floor.
+ */
+export const JUVENILE_PLANT_ALLOWANCE_LIMITS = { min: 0, max: 2 } as const
 
 export interface SimConfig {
   world: WorldConfig
@@ -155,7 +177,11 @@ export function defaultConfig(): SimConfig {
       // The engine's own gut constant (see `PredationConfig`): 0.45 pays the
       // `0.45 + 0.45 · digest` every measured kill used, and is likewise inert
       // unless the user moves it.
-      assimilationBase: 0.45
+      assimilationBase: 0.45,
+      // The engine's own committed juvenile plant allowance (candidate (m)):
+      // a multiplier of 1 leaves its rule untouched, which is what every (m)
+      // measurement was made against.
+      juvenilePlantAllowance: 1
     },
     population: {
       // Measured founder load (PROGRESS.md §6D, candidate h). 60/18/12 overharvests
@@ -280,6 +306,23 @@ export function clampAssimilationBase(value: number): number {
   return clampNum(value, ASSIMILATION_BASE_LIMITS.min, ASSIMILATION_BASE_LIMITS.max)
 }
 
+/**
+ * Set the live juvenile-plant-concession strength (`config.predation.juvenilePlantAllowance`):
+ * the engine's candidate (m) rule — what a strict-carnivore animal before maturity is
+ * allowed to eat plants, scaled by its position along the diet gradient — multiplied by
+ * this value. The engine's committed rule is exactly this value at the default 1.0, and
+ * removing the candidate entirely is 0, so both of the settings the §6D measurements used
+ * are reachable here. Takes effect on a live world. Returns the value that was applied.
+ */
+export function setJuvenilePlantAllowance(config: SimConfig, value: number): number {
+  config.predation.juvenilePlantAllowance = clampJuvenilePlantAllowance(value)
+  return config.predation.juvenilePlantAllowance
+}
+
+export function clampJuvenilePlantAllowance(value: number): number {
+  return clampNum(value, JUVENILE_PLANT_ALLOWANCE_LIMITS.min, JUVENILE_PLANT_ALLOWANCE_LIMITS.max)
+}
+
 /** Validate & clamp user input so a stray slider value cannot break the sim. */
 export function normalizeConfig(config: SimConfig): void {
   const w = config.world
@@ -307,9 +350,14 @@ export function normalizeConfig(config: SimConfig): void {
   // Snapshots saved before the quarry-floor knob existed lack the section;
   // fill in the engine's own gate so old snapshots keep behaving exactly as
   // they were measured.
-  const pd = (config.predation ??= { minPreyEnergy: 0.2, assimilationBase: 0.45 })
+  const pd = (config.predation ??= {
+    minPreyEnergy: 0.2,
+    assimilationBase: 0.45,
+    juvenilePlantAllowance: 1
+  })
   pd.minPreyEnergy = clampMinPreyEnergy(pd.minPreyEnergy)
   pd.assimilationBase = clampAssimilationBase(pd.assimilationBase ?? 0.45)
+  pd.juvenilePlantAllowance = clampJuvenilePlantAllowance(pd.juvenilePlantAllowance ?? 1)
   const p = config.population
   p.maxCreatures = clampPopulationCap(p.maxCreatures)
   for (const diet of DIET_CLASSES) {
