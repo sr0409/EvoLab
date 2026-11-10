@@ -1,18 +1,20 @@
 <script setup lang="ts">
 /**
  * Top control bar (milestone 4): run controls, speed, seed, scenario presets,
- * the manual population ceiling and the quarry-energy floor knob (milestone 9),
- * and map view selection. All state lives in the store; this component only
- * forwards user intent to it.
+ * the manual population ceiling, quarry-energy floor, and assimilation base
+ * knobs (milestone 9), and map view selection. All state lives in the store;
+ * this component only forwards user intent to it.
  */
 import { computed, ref } from 'vue'
 import {
   SPEED_PRESETS,
   getSim,
   newWorld,
+  resetAssimilationBase,
   resetMinPreyEnergy,
   resetPopulationCap,
   selectScenario,
+  setAssimilationBase,
   setMapView,
   setMinPreyEnergy,
   setPopulationCap,
@@ -22,7 +24,12 @@ import {
   ui
 } from '../store'
 import type { MapView } from '../store'
-import { MIN_PREY_ENERGY_LIMITS, POPULATION_CAP_LIMITS, SCENARIOS } from '../sim/config'
+import {
+  ASSIMILATION_BASE_LIMITS,
+  MIN_PREY_ENERGY_LIMITS,
+  POPULATION_CAP_LIMITS,
+  SCENARIOS
+} from '../sim/config'
 
 const seedInput = ref('')
 
@@ -75,6 +82,16 @@ function onCapChange(event: Event): void {
 function onMinPreyEnergyChange(event: Event): void {
   const input = event.target as HTMLInputElement
   setMinPreyEnergy(Number(input.value))
+}
+
+/**
+ * Apply a manually entered assimilation base. The store clamps it to
+ * ASSIMILATION_BASE_LIMITS, and the input is re-rendered with the value the
+ * simulation is actually using.
+ */
+function onAssimilationBaseChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  setAssimilationBase(Number(input.value))
 }
 
 function createWorld(): void {
@@ -146,6 +163,22 @@ function createWorld(): void {
         @change="onMinPreyEnergyChange"
       />
       <button @click="resetMinPreyEnergy()" title="Restore the engine's original quarry gate (0.2)">Default</button>
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="assimilation-base">Meat assimilation</label>
+      <input
+        id="assimilation-base"
+        class="assimilation"
+        type="number"
+        :value="Number(ui.assimilationBase.toFixed(2))"
+        :min="ASSIMILATION_BASE_LIMITS.min"
+        :max="ASSIMILATION_BASE_LIMITS.max"
+        step="0.05"
+        title="Fraction of a prey's body a predator's gut absorbs, before its gut gene scales it (default 0.45). Raises or lowers what each kill delivers."
+        @change="onAssimilationBaseChange"
+      />
+      <button @click="resetAssimilationBase()" title="Restore the engine's original gut constant (0.45)">Default</button>
     </div>
 
     <div class="group">

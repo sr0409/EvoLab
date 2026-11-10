@@ -893,8 +893,10 @@ export class Simulation {
 
     // What the bite can deliver: the energy in the quarry's body, at this
     // predator's absorption rate, capped by the room left in its reserve.
+    // Same rate the kill itself pays out (see `attack`), so a hunt is never
+    // priced against one gut and fed by another.
     const room = Math.max(0, ph.maxEnergy - c.energy)
-    const payoff = Math.min(quarry.energy, room) * (0.45 + 0.45 * ph.digest)
+    const payoff = Math.min(quarry.energy, room) * this.assimilationRate(c)
 
     // A quarry only truly escapes if it can pay for running; wounded and
     // desperate prey stand their ground, which is what makes them reachable.
@@ -907,6 +909,19 @@ export class Simulation {
     const huntTickCost = ph.basalRate + ph.moveCostCoefficient * ph.speed * ph.speed
     const expectedCost = huntTickCost * (dist / closing)
     return expectedCost <= payoff
+  }
+
+  /**
+   * What fraction of a prey body this predator's gut takes. The engine's
+   * kill path was always `0.45 + 0.45 · digest` of the prey's energy; this is
+   * that same rate as `assimilationBase · (1 + digest)`, with the config default
+   * left at 0.45 so behaviour is unchanged until the knob moves. Capped at 1:
+   * no gut absorbs more energy than the body actually holds — the rest always
+   * goes to litter, which is what keeps the energy ledger closed.
+   */
+  private assimilationRate(c: Creature): number {
+    const rate = this.config.predation.assimilationBase * (1 + c.phenotype.digest)
+    return rate > 1 ? 1 : rate
   }
 
   /**
@@ -1115,7 +1130,11 @@ export class Simulation {
     if (prey.health > 0) return
     const transferable = prey.energy
     const room = c.phenotype.maxEnergy - c.energy
-    const absorbed = Math.min(room, transferable * (0.45 + 0.45 * c.phenotype.digest))
+    // What the gut takes of the body — the same rate `pursuitIsWorthwhile`
+    // priced the chase with. Whatever is not absorbed stays with the body and
+    // is deposited to litter where the prey fell, as before.
+    const rate = this.assimilationRate(c)
+    const absorbed = Math.min(room, transferable * rate)
     c.energy += absorbed
     const leftover = transferable - absorbed
     const tile = Math.floor(prey.y) * this.world.width + Math.floor(prey.x)

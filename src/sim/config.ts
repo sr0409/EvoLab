@@ -65,6 +65,15 @@ export interface PredationConfig {
    * as before.
    */
   minPreyEnergy: number
+  /**
+   * What fraction of a prey's held body energy this predator's gut takes on a
+   * kill: the engine pays `assimilationBase · (1 + digest)`, so the original
+   * hard-coded `0.45 + 0.45 · digest` is exactly this value at its default
+   * 0.45. The engine re-reads it every tick, so the control takes effect on a
+   * live world. Default 0.45 is the engine's own constant: a world with the
+   * knob untouched behaves exactly as it did before.
+   */
+  assimilationBase: number
 }
 
 export interface PopulationConfig {
@@ -91,6 +100,14 @@ export const POPULATION_CAP_LIMITS = { min: 20, max: 4000 } as const
  * experiment PROGRESS.md §6E asks for.
  */
 export const MIN_PREY_ENERGY_LIMITS = { min: 0, max: 0.9 } as const
+
+/**
+ * Bounds the gut constant can be set to. 0.45 reproduces the engine's original
+ * `0.45 + 0.45 · digest` payout on every kill, and 0.9 keeps the widest digest
+ * (1.0) at a total rate of 1.9 — still paid out of the prey's held energy, so
+ * the ledger closes the same way.
+ */
+export const ASSIMILATION_BASE_LIMITS = { min: 0, max: 0.9 } as const
 
 export interface SimConfig {
   world: WorldConfig
@@ -134,7 +151,11 @@ export function defaultConfig(): SimConfig {
       // legal prey only while its energy reserve sits above this floor. 0.2 is
       // the value every recorded measurement (PROGRESS.md §6E–§6B) was made
       // against, so the knob stays inert unless the user moves it.
-      minPreyEnergy: 0.2
+      minPreyEnergy: 0.2,
+      // The engine's own gut constant (see `PredationConfig`): 0.45 pays the
+      // `0.45 + 0.45 · digest` every measured kill used, and is likewise inert
+      // unless the user moves it.
+      assimilationBase: 0.45
     },
     population: {
       // Measured founder load (PROGRESS.md §6D, candidate h). 60/18/12 overharvests
@@ -243,6 +264,22 @@ export function clampMinPreyEnergy(value: number): number {
   return clampNum(value, MIN_PREY_ENERGY_LIMITS.min, MIN_PREY_ENERGY_LIMITS.max)
 }
 
+/**
+ * Set the live gut constant (`config.predation.assimilationBase`): the share of
+ * a kill's held energy the predator actually absorbs, scaled by the predator's
+ * `digest` trait. The engine's original payout was `0.45 + 0.45 · digest`, which
+ * is exactly this knob at its default 0.45. Takes effect on a live world.
+ * Returns the value actually applied.
+ */
+export function setAssimilationBase(config: SimConfig, value: number): number {
+  config.predation.assimilationBase = clampAssimilationBase(value)
+  return config.predation.assimilationBase
+}
+
+export function clampAssimilationBase(value: number): number {
+  return clampNum(value, ASSIMILATION_BASE_LIMITS.min, ASSIMILATION_BASE_LIMITS.max)
+}
+
 /** Validate & clamp user input so a stray slider value cannot break the sim. */
 export function normalizeConfig(config: SimConfig): void {
   const w = config.world
@@ -270,8 +307,9 @@ export function normalizeConfig(config: SimConfig): void {
   // Snapshots saved before the quarry-floor knob existed lack the section;
   // fill in the engine's own gate so old snapshots keep behaving exactly as
   // they were measured.
-  const pd = (config.predation ??= { minPreyEnergy: 0.2 })
+  const pd = (config.predation ??= { minPreyEnergy: 0.2, assimilationBase: 0.45 })
   pd.minPreyEnergy = clampMinPreyEnergy(pd.minPreyEnergy)
+  pd.assimilationBase = clampAssimilationBase(pd.assimilationBase ?? 0.45)
   const p = config.population
   p.maxCreatures = clampPopulationCap(p.maxCreatures)
   for (const diet of DIET_CLASSES) {

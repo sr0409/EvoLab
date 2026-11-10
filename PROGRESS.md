@@ -17,7 +17,7 @@ an open question in §6 rather than stated as fact._
 | 2 Life | **done, measured gap** | creatures with energy/health/age, movement, grazing, hunting, attacks, breeding with inheritance and mutation, death causes, census. The carnivore diet band does not persist in long runs; see §5 and §6 |
 | 3 Evolution | **done** | genome → phenotype mapping with allometry, crossover and mutation, speciation and extinction bookkeeping, climate/thermal and crowding pressures, trait statistics over time |
 | 4 Interface | **done, verified live** | `src/main.ts`, `src/App.vue`, `src/store.ts` (loop + UI state; the Simulation is kept out of Vue reactivity), canvas world renderer (terrain / biomass / temperature views + creature overlay), live census & energy-audit panel, time-series charts (`CHART_FIELDS`), species roster, event log, and a manual population-cap control in the run bar. Verified against the running dev server: tick advances, canvas paints, panels populate |
-| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 8 files / 37 tests: `tests/population-cap.test.ts` and `tests/min-prey-energy.test.ts` were added with the controls described in §3.) |
+| 5 Quality | **done, 25 tests pass** | engine fix: offspring now record both parents in the lineage store (`makeCreature` took no parent ids before). Assertion tests: `tests/conservation.test.ts` (ledger balances across 1000 ticks, pool accounting, brood energy handover), `tests/determinism.test.ts` (same seed → identical state; different seeds diverge), `tests/lineage.test.ts` (inherit stays inside parent bounds, mutate stays in trait ranges, engine genealogy complete/acyclic, ages match birth ticks), `tests/population.test.ts` (census on schedule, diet classes partition the population, births/deaths census records add up, species bookkeeping). Shared `tests/helpers.ts` gives a 48×48 test world. `npm run test` → 6 files / 25 tests pass; `npm run build` clean. (Now 9 files / 44 tests: `tests/min-prey-energy.test.ts`, `tests/population-cap.test.ts`, and `tests/assimilation-base.test.ts` were added with the controls described in §3.) |
 | 6 Performance / E2E | **done, measured** | `vitest.perf.config.ts` + `tests/perf/engine.perf.ts` (a separate runner; `*.perf.ts` is never matched by `npm run test`): default 168×112 world builds in ~18 ms and runs at 13–16 ms/tick with a warm population of ~3200 — the UI budget at 10 ticks/s is <100 ms/tick shared with rendering; 48×48 test world at its 500-creature ceiling ~1.4 ms/tick; save/restore ~4 ms. Limits are floors (~3–30× headroom), so a red perf test means an algorithmic blow-up. E2E: `playwright.config.ts` + `e2e/app.e2e.ts` drive the real app against the real engine on a dedicated dev-server port: readout reflects the world, Step advances exactly one tick per click, Run/Pause control the loop, seed input creates a world with that seed and resets the tick. `npm run test:perf` → 3/3 pass; `npm run test:e2e` → 4/4 pass; unit suite and `npm run build` remain green |
 
 ---
@@ -40,9 +40,10 @@ src/sim/lineage.ts    compact parent-of-creature genealogy (inbreeding checks fo
 src/sim/spatial.ts    spatial hash grid used for neighbour queries
 src/sim/stats.ts      census, per-trait statistics, history ring buffers
 src/sim/config.ts     `defaultConfig()`, scenario presets (`SCENARIOS`), population ceiling
-                      (`POPULATION_CAP_LIMITS`, `clampPopulationCap`, `setPopulationCap`), quarry-energy
-                      floor (`PredationConfig`, `MIN_PREY_ENERGY_LIMITS`, `clampMinPreyEnergy`,
-                      `setMinPreyEnergy`)
+                      (`POPULATION_CAP_LIMITS`, `clampPopulationCap`, `setPopulationCap`), predation
+                      (`PredationConfig`, `MIN_PREY_ENERGY_LIMITS`, `clampMinPreyEnergy`,
+                      `setMinPreyEnergy`; assimilation base `ASSIMILATION_BASE_LIMITS`,
+                      `clampAssimilationBase`, `setAssimilationBase`)
 src/sim/types.ts      shared types, behaviour constants, `DEATH_CAUSES`, `dietClassOf`
 src/sim/engine.ts     the step function, `EnergyLedger`, `auditEnergy()`, event log, census history,
                       `toState()` / `fromState()` with `SIM_STATE_VERSION`, `CHART_FIELDS`
@@ -52,12 +53,13 @@ src/env.d.ts          Vue SFC module declaration
 src/store.ts          owns the `Simulation` and the requestAnimationFrame loop (capped ticks per
                       frame); reactive `ui` control state only (running / speed / map view / selected
                       species / `frame`), `getSim()`, `stepOnce`, `newWorld`, scenario + speed presets,
-                      the live population ceiling (`setPopulationCap` / `resetPopulationCap`) and the
-                      quarry-energy floor (`setMinPreyEnergy` / `resetMinPreyEnergy`)
+                      the live population cap (`setPopulationCap` / `resetPopulationCap`) and the predation
+                      controls (`setMinPreyEnergy` / `resetMinPreyEnergy`, `setAssimilationBase` /
+                      `resetAssimilationBase`)
 src/App.vue           app shell; starts the loop on mount, stops it on unmount
 src/ui/ControlBar.vue run/pause/step, speed select, seed + new world, scenario presets, map-view
-                      buttons, population cap and prey-energy-floor fields, live tick/season/creature
-                      readout
+                      buttons, population cap, prey-energy-floor and meat-assimilation fields, live
+                      tick/season/creature readout
 src/render/WorldCanvas.vue  one-pixel-per-tile ImageData (terrain / biomass / temperature views)
                       upscaled to the display canvas, then creature dots; reads only, never writes
 src/ui/StatsPanel.vue live census, diet-composition bars, trait averages, deaths by cause, the
@@ -75,6 +77,10 @@ tests/determinism.test.ts    same seed → identical state; different seeds dive
 tests/lineage.test.ts        inheritance/mutation bounds + engine genealogy assertions
 tests/min-prey-energy.test.ts the quarry-energy floor as a knob: default equals the engine's original gate,
                              bounds, normalize parity, and the live-config and store wiring (§3)
+tests/assimilation-base.test.ts the gut constant as a knob: default equals the engine's original
+                             `0.45 + 0.45 · digest`, bounds, normalize parity, ledger still closed with
+                             the knob moved mid-run, same-seed parity with the original constant, and the
+                             store wiring (§3)
 tests/population.test.ts     census bookkeeping: schedule, diet partitioning, birth/death accounting
 tests/population-cap.test.ts the population ceiling as a knob: bounds, live ceiling changes without
                              restarting a world, newWorld carry-over (§3)
@@ -109,7 +115,7 @@ The pieces §3 used to list as missing are written and verified live:
    bounded `requestAnimationFrame` loop (`MAX_TICKS_PER_FRAME` caps a frame's work; speed presets
    2–10 t/s; pause / single-step). The `Simulation` instance is deliberately **not** made reactive;
    components read it through `getSim()` and redraw when `ui.frame` / `ui.epoch` advance.
-2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets, and the manual population cap and minimum prey energy fields below.
+2. `src/App.vue` + `ControlBar` — play/pause/step, speed, seed + new world, the `SCENARIOS` presets, and the manual population cap, minimum prey energy, and meat assimilation fields below.
 3. `src/render/WorldCanvas.vue` — a renderer that only *reads*: terrain/biomass/temperature from
    `world`'s tile arrays into an ImageData buffer upscaled to the display canvas, creature dots on
    top, species highlight on selection. It never writes simulation state.
@@ -176,6 +182,31 @@ Verified live in the running UI: the field renders as a spinner on the control b
 the bound rather than corrupting the config, Default restores 0.2, and the app runs with no console errors. A
 measured ecology run at raised floors is the §6E experiment itself and has not been run yet; §6E closes by naming
 what such a scan would settle.
+
+**Meat assimilation (added after the quarry-floor control).** The other side of the predation budget — how much
+of a kill a predator's gut actually absorbs — was hard-coded in the engine as `0.45 + 0.45 · digest`, written
+out in two places (`attack` and the payoff estimate that prices a chase). It is now
+`config.predation.assimilationBase` (`src/sim/config.ts`), read through one engine helper,
+`assimilationRate(c)`, which pays `assimilationBase · (1 + digest)` capped at 1.0: absorption is never more
+than the prey's body held, and what the gut does not take still falls to litter where the prey fell, exactly
+as before. `ASSIMILATION_BASE_LIMITS` (0–0.9), `clampAssimilationBase(value)` and
+`setAssimilationBase(config, value)` mirror the quarry-floor functions; `normalizeConfig` clamps through the
+same function and back-fills `0.45` for a saved config or snapshot that predates the key, so old saves
+restore the engine's original gate rather than an undefined one. The default 0.45 reproduces the old constant
+exactly, so no measured result changes. `src/store.ts` mirrors it in `ui.assimilationBase` and exports
+`setAssimilationBase(value)` / `resetAssimilationBase()`; `newWorld` carries the chosen value over to the new
+world the way it carries the scenario and the cap. The ControlBar field takes min/max from the limits with
+step 0.05 and a Default button that restores 0.45. The rate is read every tick — it prices
+`pursuitIsWorthwhile`'s payoff and pays the kill itself — so raising it concentrates profitable hunting on
+well-fed quarry and lowering it opens the thin-reserve prey on the intake side; the absorption cap keeps the
+energy ledger closed at every knob position. `tests/assimilation-base.test.ts` (7 tests) covers the default
+matching the engine constant, the clamping (bounds and NaN), that the UI control and `normalizeConfig` clamp
+identically, back-filling 0.45 for configs missing the `predation` section or holding only the older floor
+key, the knob taking effect mid-run on a live world with the energy audit still closed at both extremes, run
+parity at the default with a moved knob observable in the same world, and the store wiring. Verified live in
+the running UI: the field moves `ui.assimilationBase` and `sim.config.predation.assimilationBase` together,
+out-of-range and empty (NaN) input land on the limits, and Default restores 0.45. An ecology scan across
+knob positions — the intake-side counterpart of the §6E floor scan — has not been run yet.
 
 ---
 

@@ -13,6 +13,7 @@ import { Simulation } from './sim/engine'
 import {
   setPopulationCap as applyPopulationCap,
   setMinPreyEnergy as applyMinPreyEnergy,
+  setAssimilationBase as applyAssimilationBase,
   applyScenario,
   defaultConfig,
   findScenario
@@ -50,6 +51,13 @@ const ui = reactive({
    * that config value every tick, so changing it acts on a running world.
    */
   minPreyEnergy: sim.config.predation.minPreyEnergy,
+  /**
+   * The gut constant in force on the live world, mirrored from
+   * `sim.config.predation.assimilationBase` so the control can show and edit it
+   * on a running world. The engine reads the config value every tick, on both
+   * the hunt decision and the harvest.
+   */
+  assimilationBase: sim.config.predation.assimilationBase,
   /** Bumped once per simulation frame; panels watch this to redraw. */
   frame: 0,
   /** Generation of the Simulation instance; changes when a world is replaced. */
@@ -159,11 +167,33 @@ export function resetMinPreyEnergy(): void {
   setMinPreyEnergy(defaultConfig().predation.minPreyEnergy)
 }
 
+/** Restore the engine's own gut constant (0.45, the base of the `0.45 + 0.45 · digest` absorption the engine has always used). */
+export function resetAssimilationBase(): void {
+  setAssimilationBase(defaultConfig().predation.assimilationBase)
+}
+
+/**
+ * Set the assimilation base — the fraction of a prey body the predator's gut
+ * takes before its gut-quality gene scales it — on the running world at any
+ * time. The engine reads `config.predation.assimilationBase` every tick, on
+ * both sides of a hunt: the valuation that decides whether to commit to a
+ * chase, and the energy actually absorbed on a kill (the rest of the body
+ * falls to litter, as before). Raising it raises carnivore intake per kill;
+ * it does not change what counts as legal quarry, which is the prey-energy
+ * floor's job. Like the other tuned controls, the value carries across to a
+ * new world.
+ */
+export function setAssimilationBase(value: number): void {
+  ui.assimilationBase = applyAssimilationBase(sim.config, value)
+  ui.frame++
+}
+
 /**
  * Replace the simulation with a fresh world. If a scenario is selected it is
  * applied to the new config immediately, so "regenerate world" keeps the
- * selected climate preset; the manually set population ceiling and quarry-energy
- * floor are carried over for the same reason.
+ * selected climate preset; the manually set population ceiling, quarry-energy
+ * floor, and assimilation base are carried over for the same reason: they are
+ * part of the experiment the user is running, not per-world settings.
  */
 export function newWorld(seed?: string): void {
   const config = defaultConfig()
@@ -172,6 +202,7 @@ export function newWorld(seed?: string): void {
   if (scenario) applyScenario(config, scenario)
   ui.populationCap = applyPopulationCap(config, ui.populationCap)
   applyMinPreyEnergy(config, ui.minPreyEnergy)
+  applyAssimilationBase(config, ui.assimilationBase)
   sim = new Simulation(config)
   pendingTicks = 0
   ui.epoch++
